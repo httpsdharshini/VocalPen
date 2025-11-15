@@ -12,10 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { collection, DocumentReference } from 'firebase/firestore';
+import { addDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Exam } from '@/lib/types';
+import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+
 
 export default function NewExamPage() {
   const [title, setTitle] = useState('');
@@ -27,7 +29,7 @@ export default function NewExamPage() {
   const { toast } = useToast();
   const { firestore, storage } = useFirebase();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !duration || !pdfFile) {
       toast({
@@ -39,39 +41,45 @@ export default function NewExamPage() {
     }
     setIsLoading(true);
 
-    // 1. Create the exam document shell first
-    const newExamData: Omit<Exam, 'id' | 'questionPaperUrl'> = {
-      title,
-      duration: parseInt(duration, 10),
-    };
-    const examsCollection = collection(firestore, 'exams');
-    addDocumentNonBlocking(examsCollection, newExamData).then(docRef => {
-        if (!docRef || !pdfFile || !storage) return;
+    try {
+      // 1. Create the exam document shell first, but this time, wait for the reference.
+      const newExamData: Omit<Exam, 'id' | 'questionPaperUrl'> = {
+        title,
+        duration: parseInt(duration, 10),
+      };
+      const examsCollection = collection(firestore, 'exams');
+      const docRef = await addDoc(examsCollection, newExamData);
 
-        // 2. Upload the file
-        const storageRef = ref(storage, `questionPapers/${docRef.id}_${pdfFile.name}`);
-        
-        uploadBytes(storageRef, pdfFile).then(uploadResult => {
-            // 3. Get the download URL
-            getDownloadURL(uploadResult.ref).then(downloadURL => {
-                // 4. Update the document with the URL
-                updateDocumentNonBlocking(docRef, { questionPaperUrl: downloadURL });
-            });
-        }).catch(error => {
-            console.error("Error uploading file: ", error);
-            toast({
-                variant: "destructive",
-                title: "File Upload Error",
-                description: "An error occurred while uploading the PDF. Please try again.",
-            });
-        });
-    });
+      // Now that we have the docRef, we can proceed with the upload.
+      if (!docRef || !pdfFile || !storage) {
+        throw new Error("Failed to create document or missing file/storage instance.");
+      }
 
-    toast({
-      title: "Exam Creation Started",
-      description: `The exam "${title}" is being created in the background.`,
-    });
-    router.push('/admin/exams');
+      // 2. Upload the file
+      const storageRef = ref(storage, `questionPapers/${docRef.id}_${pdfFile.name}`);
+      const uploadResult = await uploadBytes(storageRef, pdfFile);
+      
+      // 3. Get the download URL
+      const downloadURL = await getDownloadURL(uploadResult.ref);
+      
+      // 4. Update the document with the URL using the non-blocking helper
+      updateDocumentNonBlocking(docRef, { questionPaperUrl: downloadURL });
+
+      toast({
+        title: "Exam Creation Started",
+        description: `The exam "${title}" is being created in the background.`,
+      });
+      router.push('/admin/exams');
+
+    } catch (error) {
+      console.error("Error creating exam: ", error);
+      toast({
+          variant: "destructive",
+          title: "Exam Creation Error",
+          description: "An error occurred while creating the exam. Please try again.",
+      });
+       setIsLoading(false);
+    }
   };
 
   return (

@@ -26,7 +26,7 @@ export default function EditExamPage() {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   
   const { toast } = useToast();
   const { firestore, storage } = useFirebase();
@@ -64,39 +64,44 @@ export default function EditExamPage() {
         });
         return;
     }
-    setIsLoading(true);
+    setIsUpdating(true);
 
     const updatedExamData: Partial<Omit<Exam, 'id'>> = {
       title,
       duration: parseInt(duration, 10),
     };
     
-    // First, update the text fields
+    // First, update the text fields non-blockingly
     updateDocumentNonBlocking(examDocRef, updatedExamData);
 
-    // Then, if there's a new file, upload it and update the URL
+    // Then, if there's a new file, upload it and update the URL.
+    // This part can also be non-blocking for the UI.
     if (pdfFile && storage) {
         const storageRef = ref(storage, `questionPapers/${examId}_${pdfFile.name}`);
         
-        uploadBytes(storageRef, pdfFile).then(uploadResult => {
-            getDownloadURL(uploadResult.ref).then(downloadURL => {
-                // Update the document with the new URL
-                updateDocumentNonBlocking(examDocRef, { questionPaperUrl: downloadURL });
-            });
-        }).catch(error => {
-            console.error("Error uploading file: ", error);
-            toast({
-                variant: "destructive",
-                title: "File Upload Error",
-                description: "An error occurred while uploading the new PDF. Please try again.",
-            });
-        });
+        // This promise chain will run in the background.
+        uploadBytes(storageRef, pdfFile)
+          .then(uploadResult => getDownloadURL(uploadResult.ref))
+          .then(downloadURL => {
+              // Update the document with the new URL
+              updateDocumentNonBlocking(examDocRef, { questionPaperUrl: downloadURL });
+          })
+          .catch(error => {
+              console.error("Error uploading file or getting URL: ", error);
+              // Optionally inform the user of the background failure
+              toast({
+                  variant: "destructive",
+                  title: "File Upload Failed",
+                  description: "The exam details were updated, but the new PDF failed to upload in the background.",
+              });
+          });
     }
 
     toast({
       title: "Updating Exam",
       description: `The exam "${title}" is being updated in the background.`,
     });
+    // Navigate away immediately
     router.push('/admin/exams');
   };
 
@@ -210,8 +215,8 @@ export default function EditExamPage() {
                           </div>
                         )}
                     </div>
-                    <Button type="submit" disabled={isLoading}>
-                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    <Button type="submit" disabled={isUpdating}>
+                      {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Update Exam
                     </Button>
                 </form>
