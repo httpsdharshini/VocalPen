@@ -56,11 +56,11 @@ export default function EditExamPage() {
       return;
     }
     
-    if (!examDocRef) {
+    if (!examDocRef || !storage) {
         toast({
             variant: "destructive",
             title: "Error",
-            description: "Exam document reference not available. Please try again.",
+            description: "Exam document reference or storage not available. Please try again.",
         });
         return;
     }
@@ -74,33 +74,32 @@ export default function EditExamPage() {
     // First, update the text fields non-blockingly
     updateDocumentNonBlocking(examDocRef, updatedExamData);
 
-    // Then, if there's a new file, upload it and update the URL.
-    // This part can also be non-blocking for the UI.
-    if (pdfFile && storage) {
+    // Then, if there's a new file, upload it and update the URL in the background.
+    if (pdfFile) {
         const storageRef = ref(storage, `questionPapers/${examId}_${pdfFile.name}`);
         
-        // This promise chain will run in the background.
         uploadBytes(storageRef, pdfFile)
           .then(uploadResult => getDownloadURL(uploadResult.ref))
           .then(downloadURL => {
-              // Update the document with the new URL
+              // Update the document with the new URL non-blockingly
               updateDocumentNonBlocking(examDocRef, { questionPaperUrl: downloadURL });
           })
           .catch(error => {
-              console.error("Error uploading file or getting URL: ", error);
-              // Optionally inform the user of the background failure
+              console.error("Error during background file upload/update: ", error);
               toast({
                   variant: "destructive",
                   title: "File Upload Failed",
-                  description: "The exam details were updated, but the new PDF failed to upload in the background.",
+                  description: "The exam details were updated, but the new PDF failed to upload. You can try uploading it again.",
+                  duration: 5000,
               });
           });
     }
 
     toast({
-      title: "Updating Exam",
+      title: "Update Initiated",
       description: `The exam "${title}" is being updated in the background.`,
     });
+    
     // Navigate away immediately
     router.push('/admin/exams');
   };

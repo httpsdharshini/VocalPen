@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase } from '@/firebase';
-import { collection, DocumentReference } from 'firebase/firestore';
+import { collection } from 'firebase/firestore';
 import { addDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Exam } from '@/lib/types';
@@ -23,7 +23,7 @@ export default function NewExamPage() {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
   const { toast } = useToast();
@@ -39,10 +39,20 @@ export default function NewExamPage() {
       });
       return;
     }
-    setIsLoading(true);
+    
+    if (!firestore || !storage) {
+       toast({
+        variant: "destructive",
+        title: "Firebase Error",
+        description: "Firestore or Storage is not available. Please try again later.",
+      });
+      return;
+    }
+
+    setIsCreating(true);
 
     try {
-      // 1. Create the exam document shell first, but this time, wait for the reference.
+      // 1. Create the exam document shell first and get its reference.
       const newExamData: Omit<Exam, 'id' | 'questionPaperUrl'> = {
         title,
         duration: parseInt(duration, 10),
@@ -50,35 +60,42 @@ export default function NewExamPage() {
       const examsCollection = collection(firestore, 'exams');
       const docRef = await addDoc(examsCollection, newExamData);
 
-      // Now that we have the docRef, we can proceed with the upload.
-      if (!docRef || !pdfFile || !storage) {
-        throw new Error("Failed to create document or missing file/storage instance.");
-      }
-
-      // 2. Upload the file
+      // 2. Start the file upload process in the background.
       const storageRef = ref(storage, `questionPapers/${docRef.id}_${pdfFile.name}`);
-      const uploadResult = await uploadBytes(storageRef, pdfFile);
       
-      // 3. Get the download URL
-      const downloadURL = await getDownloadURL(uploadResult.ref);
-      
-      // 4. Update the document with the URL using the non-blocking helper
-      updateDocumentNonBlocking(docRef, { questionPaperUrl: downloadURL });
+      // The promise chain will run in the background without blocking the UI.
+      uploadBytes(storageRef, pdfFile)
+        .then(uploadResult => getDownloadURL(uploadResult.ref))
+        .then(downloadURL => {
+            // 3. Update the document with the URL using the non-blocking helper.
+            updateDocumentNonBlocking(docRef, { questionPaperUrl: downloadURL });
+        })
+        .catch(error => {
+            console.error("Error during background upload/update: ", error);
+            // Optionally, you could implement a more robust global error notification system.
+             toast({
+                variant: "destructive",
+                title: "Background Upload Failed",
+                description: `The exam "${title}" was created, but the PDF failed to upload. You can edit the exam to try again.`,
+                duration: 5000,
+            });
+        });
 
+      // 4. Immediately notify the user and navigate away.
       toast({
-        title: "Exam Creation Started",
+        title: "Exam Creation Initiated",
         description: `The exam "${title}" is being created in the background.`,
       });
       router.push('/admin/exams');
 
     } catch (error) {
-      console.error("Error creating exam: ", error);
+      console.error("Error creating exam document: ", error);
       toast({
           variant: "destructive",
           title: "Exam Creation Error",
-          description: "An error occurred while creating the exam. Please try again.",
+          description: "An error occurred while creating the exam document. Please try again.",
       });
-       setIsLoading(false);
+       setIsCreating(false);
     }
   };
 
@@ -168,8 +185,8 @@ export default function NewExamPage() {
                         />
                         <p className="text-xs text-muted-foreground">Upload the exam question paper in PDF format.</p>
                     </div>
-                    <Button type="submit" disabled={isLoading}>
-                      {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Button type="submit" disabled={isCreating}>
+                      {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Save Exam
                     </Button>
                 </form>
