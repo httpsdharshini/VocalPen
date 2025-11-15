@@ -8,6 +8,7 @@
  */
 
 import {ai} from '@/ai/genkit';
+import {googleAI} from '@genkit-ai/google-genai';
 import {z} from 'genkit';
 
 const TranscribeStudentAnswerInputSchema = z.object({
@@ -32,6 +33,7 @@ const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: {schema: TranscribeStudentAnswerInputSchema},
   output: {schema: TranscribeStudentAnswerOutputSchema},
+  model: googleAI.model('gemini-pro'),
   prompt: `Transcribe the following audio recording of a student's answer into text:\n\n{{media url=audioDataUri}}`,
 });
 
