@@ -33,7 +33,7 @@ const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: {schema: TranscribeStudentAnswerInputSchema},
   output: {schema: TranscribeStudentAnswerOutputSchema},
-  model: googleAI.model('gemini-pro'),
+  model: googleAI.model('gemini-2.5-flash'),
   prompt: `Transcribe the following audio recording of a student's answer into text:\n\n{{media url=audioDataUri}}`,
 });
 
