@@ -33,7 +33,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import type { Student, Exam } from '@/lib/types';
 
-type ExamStep = 'login' | 'verification' | 'selectExam' | 'confirmStart' | 'takingExam' | 'finished';
+type ExamStep = 'login' | 'verification' | 'selectExam' | 'takingExam' | 'finished';
 type VerificationSubStep = 'face' | 'voice' | 'verified';
 
 export default function ExamPage() {
@@ -222,40 +222,6 @@ export default function ExamPage() {
   }, [selectedExam, questions, currentQuestionIndex, speak, startRecording, toast]);
   
 
-   // Effect for confirmStart step
-  useEffect(() => {
-    if (step === 'confirmStart' && !isRecording && !isProcessing) {
-      const handleConfirmation = async (audioDataUri: string) => {
-        setIsProcessing(true);
-        try {
-          const result = await transcribeStudentAnswer({ audioDataUri });
-          if (result.transcription.toLowerCase().includes('yes')) {
-            setStep('takingExam');
-            setExamStarted(true);
-          } else {
-            speak("I did not understand. Please say yes to start.", () => {
-               // Restart listening if response is not "yes"
-               setIsProcessing(false); // Allow re-prompting and listening
-            });
-          }
-        } catch (error) {
-          console.error('Confirmation error:', error);
-          speak("Sorry, I had trouble understanding. Please try again.", () => {
-              setIsProcessing(false);
-          });
-        }
-      };
-
-      speak("Can we start the exam? Are you ready?", () => {
-        startRecording(handleConfirmation);
-        // Automatically stop recording after a few seconds to process the command
-        setTimeout(() => {
-          stopRecording();
-        }, 3000); // Listen for 3 seconds
-      });
-    }
-  }, [step, isRecording, isProcessing, speak, startRecording, stopRecording]);
-
   // Effect to read the first question when exam starts
   useEffect(() => {
     if (step === 'takingExam' && examStarted && currentQuestionIndex === 0 && answers.length === 0) {
@@ -334,7 +300,8 @@ export default function ExamPage() {
     setSelectedExam(exam);
     setTimeLeft(exam.duration * 60);
     setAnswers(Array(exam.questionText.split('\n').filter(q => q.trim() !== '').length).fill(''));
-    setStep('confirmStart');
+    setStep('takingExam');
+    setExamStarted(true);
   };
 
   const handleVoiceEdit = async (command: string) => {
@@ -460,7 +427,6 @@ export default function ExamPage() {
     step === 'login' ? 0 
     : step === 'verification' ? (verificationSubStep === 'face' ? 15 : verificationSubStep === 'voice' ? 30 : 45)
     : step === 'selectExam' ? 50
-    : step === 'confirmStart' ? 70
     : step === 'takingExam' ? 75 + (((currentQuestionIndex + 1) / (questions.length || 1)) * 25)
     : 100;
   
@@ -613,28 +579,6 @@ export default function ExamPage() {
     </Card>
   );
 
-  const renderConfirmStartStep = () => (
-    <Card className="w-full max-w-2xl text-center">
-      <CardHeader>
-        <CardTitle>Ready to Begin?</CardTitle>
-        <CardDescription>The exam will start after you confirm.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col items-center justify-center space-y-4 p-12">
-        {isProcessing || isRecording ? (
-          <>
-            <Loader2 className="h-16 w-16 animate-spin text-primary" />
-            <p className="text-muted-foreground">{isRecording ? 'Listening...' : 'Processing...'}</p>
-          </>
-        ) : (
-          <>
-            <Mic className="h-16 w-16 text-primary" />
-            <p className="text-xl font-medium">Say "Yes" to start the exam.</p>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-
   const renderTakingExamStep = () => (
     <div className="w-full max-w-4xl space-y-6">
       <Card>
@@ -741,7 +685,6 @@ export default function ExamPage() {
         case 'login': return renderLoginStep();
         case 'verification': return renderVerificationStep();
         case 'selectExam': return renderSelectExamStep();
-        case 'confirmStart': return renderConfirmStartStep();
         case 'takingExam': return renderTakingExamStep();
         case 'finished': return renderFinishedStep();
         default: return renderLoginStep();
@@ -779,7 +722,7 @@ export default function ExamPage() {
             <span className={step === 'login' ? 'text-primary font-semibold' : ''}>Login</span>
             <span className={step === 'verification' ? 'text-primary font-semibold' : ''}>Verification</span>
             <span className={step === 'selectExam' ? 'text-primary font-semibold' : ''}>Select Exam</span>
-             <span className={step === 'confirmStart' || step === 'takingExam' ? 'text-primary font-semibold' : ''}>Exam in Progress</span>
+             <span className={step === 'takingExam' ? 'text-primary font-semibold' : ''}>Exam in Progress</span>
             <span className={step === 'finished' ? 'text-primary font-semibold' : ''}>Finished</span>
           </div>
         </div>

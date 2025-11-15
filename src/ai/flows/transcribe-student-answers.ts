@@ -1,3 +1,4 @@
+// transcribeStudentAnswer.ts
 'use server';
 
 import { ai } from '@/ai/genkit';
@@ -9,6 +10,7 @@ import { z } from 'zod';
 // =======================
 
 const TranscribeStudentAnswerInputSchema = z.object({
+  // expecting 'data:audio/wav;base64,...' (or other mimetype)
   audioDataUri: z.string().describe(
     "Audio Data URI: 'data:<mimetype>;base64,<encoded_data>'"
   ),
@@ -30,11 +32,14 @@ export type TranscribeStudentAnswerOutput = z.infer<
 // PROMPT
 // =======================
 
+// NOTE: some GenKit versions expect `model: googleAI.speech('...')` or `.model(...)`
+// Keep the model line as in your SDK; change if your sdk uses a different method.
 const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: { schema: TranscribeStudentAnswerInputSchema },
   output: { schema: TranscribeStudentAnswerOutputSchema },
-  model: googleAI.model('gemini-1.5-flash'), // ⬅ REQUIRED for audio transcription
+  // REQUIRED for audio transcription per your comment — keep the exact API your sdk exposes
+  model: googleAI.model('gemini-1.5-flash'),
   prompt: `
 Transcribe the following audio recording:
 
@@ -53,7 +58,17 @@ const transcribeStudentAnswerFlow = ai.defineFlow(
     outputSchema: TranscribeStudentAnswerOutputSchema,
   },
   async (input) => {
+    // validate input (zod)
+    TranscribeStudentAnswerInputSchema.parse(input);
+
+    // Call the prompt. Some GenKit versions return `response` or `output`.
+    // This code assumes prompt call returns { output } with the typed schema.
     const { output } = await transcribeStudentAnswerPrompt(input);
+
+    if (!output || !output.transcription) {
+      throw new Error('Transcription failed: no output from model.');
+    }
+
     return output!;
   }
 );
