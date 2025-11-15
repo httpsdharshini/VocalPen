@@ -52,7 +52,45 @@ export default function ExamPage() {
 
   const { toast } = useToast();
 
+  const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+
+
   const currentQuestion = mockExam.questions[currentQuestionIndex];
+
+    useEffect(() => {
+    if (step === 'verification') {
+        const getCameraPermission = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            setHasCameraPermission(true);
+
+            if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            }
+        } catch (error) {
+            console.error('Error accessing camera:', error);
+            setHasCameraPermission(false);
+            toast({
+            variant: 'destructive',
+            title: 'Camera Access Denied',
+            description: 'Please enable camera permissions in your browser settings to use this app.',
+            });
+        }
+        };
+
+        getCameraPermission();
+        
+        return () => {
+            if (videoRef.current && videoRef.current.srcObject) {
+                const stream = videoRef.current.srcObject as MediaStream;
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }
+    }
+  }, [step, toast]);
+
 
   // Timer effect
   useEffect(() => {
@@ -129,6 +167,7 @@ export default function ExamPage() {
       };
 
       mediaRecorderRef.current.onstop = async () => {
+        const isVerification = step === 'verification';
         setIsProcessing(true);
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const reader = new FileReader();
@@ -136,8 +175,15 @@ export default function ExamPage() {
         reader.onloadend = async () => {
           const audioDataUri = reader.result as string;
           try {
-            const result = await transcribeStudentAnswer({ audioDataUri });
-            setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+            if (isVerification) {
+                // Mock voice verification
+                setTimeout(() => {
+                    handleStartVerification();
+                }, 1500)
+            } else {
+                const result = await transcribeStudentAnswer({ audioDataUri });
+                setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+            }
           } catch (error) {
             console.error('Transcription error:', error);
             toast({
@@ -146,7 +192,9 @@ export default function ExamPage() {
               description: 'Could not transcribe audio. Please try again.',
             });
           } finally {
-            setIsProcessing(false);
+            if (!isVerification) {
+                setIsProcessing(false);
+            }
             // Clean up stream tracks
             stream.getTracks().forEach(track => track.stop());
           }
@@ -154,7 +202,11 @@ export default function ExamPage() {
       };
 
       mediaRecorderRef.current.start();
-      setIsRecording(true);
+      if(isVerification) {
+        setIsVoiceRecording(true);
+      } else {
+        setIsRecording(true);
+      }
     } catch (error) {
       console.error('Microphone access error:', error);
       toast({
@@ -168,7 +220,11 @@ export default function ExamPage() {
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
+      if(step === 'verification') {
+        setIsVoiceRecording(false);
+      } else {
+        setIsRecording(false);
+      }
     }
   };
 
@@ -255,24 +311,43 @@ export default function ExamPage() {
         <CardDescription>Please verify your identity to begin the exam.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed">
-          {isProcessing ? (
-             <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          ) : verificationStatus === 'success' ? (
-             <CheckCircle className="h-24 w-24 text-green-500" />
-          ) : verificationStatus === 'error' ? (
-             <XCircle className="h-24 w-24 text-destructive" />
-          ) : (
-            <Camera className="h-24 w-24 text-muted-foreground" />
-          )}
+        <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed overflow-hidden">
+            <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+            <div className="absolute inset-0 flex justify-center items-center bg-black/30">
+                {isProcessing ? (
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                ) : verificationStatus === 'success' ? (
+                    <CheckCircle className="h-24 w-24 text-green-500" />
+                ) : verificationStatus === 'error' ? (
+                    <XCircle className="h-24 w-24 text-destructive" />
+                ) : !hasCameraPermission ? (
+                    <div className="text-center text-white p-4">
+                        <Camera className="h-12 w-12 mx-auto mb-2" />
+                        <p>Camera access is required for verification.</p>
+                    </div>
+                ) : null}
+            </div>
         </div>
         <Alert>
           <User className="h-4 w-4" />
           <AlertTitle>Instructions</AlertTitle>
           <AlertDescription>
-            Center your face in the camera view. We will also ask for a short voice sample for verification.
+            Center your face in the camera view. Then, record a short voice sample for verification. Please state your full name clearly.
           </AlertDescription>
         </Alert>
+        <div className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              {isVoiceRecording ? "Recording your voice... Say your name." : "Ready to record your voice sample."}
+            </p>
+             <Button 
+                onClick={isVoiceRecording ? stopRecording : startRecording}
+                size="lg"
+                className={`rounded-full w-20 h-20 text-white ${isVoiceRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+                disabled={isProcessing || !hasCameraPermission}
+            >
+                {isVoiceRecording ? <Square className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
+            </Button>
+        </div>
       </CardContent>
       <CardFooter className="flex-col sm:flex-row justify-between gap-2">
         <Button variant="outline" onClick={handleSimulateMismatch} disabled={isProcessing}>
@@ -283,7 +358,7 @@ export default function ExamPage() {
             Proceed to Exam <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         ) : (
-          <Button onClick={handleStartVerification} disabled={isProcessing} className="w-full sm:w-auto">
+          <Button onClick={handleStartVerification} disabled={isProcessing || isVoiceRecording} className="w-full sm:w-auto">
             {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Start Verification
           </Button>
@@ -416,3 +491,5 @@ export default function ExamPage() {
     </div>
   );
 }
+
+    
