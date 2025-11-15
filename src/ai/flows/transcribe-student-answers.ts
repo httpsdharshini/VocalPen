@@ -15,7 +15,7 @@ const TranscribeStudentAnswerInputSchema = z.object({
   audioDataUri: z
     .string()
     .describe(
-      'The audio data URI of the student\'s answer, including MIME type and Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.' // Corrected description
+      'The audio data URI of the student\'s answer, including MIME type and Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'
     ),
 });
 export type TranscribeStudentAnswerInput = z.infer<typeof TranscribeStudentAnswerInputSchema>;
