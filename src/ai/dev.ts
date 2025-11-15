@@ -1,1 +1,5 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/transcribe-student-answers.ts';
+import '@/ai/flows/edit-answers-with-voice-commands.ts';
