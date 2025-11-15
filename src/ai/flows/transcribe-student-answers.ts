@@ -36,7 +36,7 @@ const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: { schema: TranscribeStudentAnswerInputSchema },
   output: { schema: TranscribeStudentAnswerOutputSchema },
-  model: 'gemini-pro',
+  model: 'gemini-pro-vision',
   prompt: `
 Transcribe the following audio recording:
 
