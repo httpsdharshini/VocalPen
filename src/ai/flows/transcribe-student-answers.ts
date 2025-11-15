@@ -32,13 +32,10 @@ export type TranscribeStudentAnswerOutput = z.infer<
 // PROMPT
 // =======================
 
-// NOTE: some GenKit versions expect `model: googleAI.speech('...')` or `.model(...)`
-// Keep the model line as in your SDK; change if your sdk uses a different method.
 const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: { schema: TranscribeStudentAnswerInputSchema },
   output: { schema: TranscribeStudentAnswerOutputSchema },
-  // REQUIRED for audio transcription per your comment — keep the exact API your sdk exposes
   model: googleAI.model('gemini-1.5-flash'),
   prompt: `
 Transcribe the following audio recording:
