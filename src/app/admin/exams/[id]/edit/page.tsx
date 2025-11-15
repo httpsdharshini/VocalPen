@@ -45,7 +45,7 @@ export default function EditExamPage() {
     }
   }, [exam]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !duration) {
       toast({
@@ -55,41 +55,49 @@ export default function EditExamPage() {
       });
       return;
     }
+    
+    if (!examDocRef) {
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Exam document reference not available. Please try again.",
+        });
+        return;
+    }
     setIsLoading(true);
 
-    try {
-      if (!examDocRef) throw new Error("Exam document reference not available");
-      
-      const updatedExamData: Partial<Omit<Exam, 'id'>> = {
-        title,
-        duration: parseInt(duration, 10),
-      };
+    const updatedExamData: Partial<Omit<Exam, 'id'>> = {
+      title,
+      duration: parseInt(duration, 10),
+    };
 
-      if (pdfFile) {
+    if (pdfFile) {
         const storage = getStorage();
         const storageRef = ref(storage, `questionPapers/${Date.now()}_${pdfFile.name}`);
-        const uploadResult = await uploadBytes(storageRef, pdfFile);
-        updatedExamData.questionPaperUrl = await getDownloadURL(uploadResult.ref);
-      }
+        
+        uploadBytes(storageRef, pdfFile).then(uploadResult => {
+            getDownloadURL(uploadResult.ref).then(downloadURL => {
+                const finalUpdate = { ...updatedExamData, questionPaperUrl: downloadURL };
+                updateDocumentNonBlocking(examDocRef, finalUpdate);
+            });
+        }).catch(error => {
+            console.error("Error uploading file: ", error);
+            toast({
+                variant: "destructive",
+                title: "File Upload Error",
+                description: "An error occurred while uploading the PDF. Please try again.",
+            });
+        });
 
-      await updateDocumentNonBlocking(examDocRef, updatedExamData);
-
-      toast({
-        title: "Exam Updated",
-        description: `The exam "${title}" has been successfully updated.`,
-      });
-      router.push('/admin/exams');
-
-    } catch (error) {
-      console.error("Error updating exam: ", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "An error occurred while updating the exam. Please try again.",
-      });
-    } finally {
-      setIsLoading(false);
+    } else {
+        updateDocumentNonBlocking(examDocRef, updatedExamData);
     }
+
+    toast({
+      title: "Updating Exam",
+      description: `The exam "${title}" is being updated.`,
+    });
+    router.push('/admin/exams');
   };
 
   return (

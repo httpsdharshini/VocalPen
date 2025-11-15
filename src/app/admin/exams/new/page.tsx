@@ -27,7 +27,7 @@ export default function NewExamPage() {
   const { toast } = useToast();
   const { firestore } = useFirebase();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !duration || !pdfFile) {
       toast({
@@ -39,39 +39,35 @@ export default function NewExamPage() {
     }
     setIsLoading(true);
 
-    try {
-      // 1. Upload file to Firebase Storage
-      const storage = getStorage();
-      const storageRef = ref(storage, `questionPapers/${Date.now()}_${pdfFile.name}`);
-      const uploadResult = await uploadBytes(storageRef, pdfFile);
-      const downloadURL = await getDownloadURL(uploadResult.ref);
+    const storage = getStorage();
+    const storageRef = ref(storage, `questionPapers/${Date.now()}_${pdfFile.name}`);
+    
+    uploadBytes(storageRef, pdfFile).then(uploadResult => {
+        getDownloadURL(uploadResult.ref).then(downloadURL => {
+            const newExam: Omit<Exam, 'id'> = {
+                title,
+                duration: parseInt(duration, 10),
+                questionPaperUrl: downloadURL,
+            };
 
-      // 2. Save exam data to Firestore
-      const newExam: Omit<Exam, 'id'> = {
-        title,
-        duration: parseInt(duration, 10),
-        questionPaperUrl: downloadURL,
-      };
+            const examsCollection = collection(firestore, 'exams');
+            addDocumentNonBlocking(examsCollection, newExam);
+        });
+    }).catch(error => {
+        console.error("Error creating exam: ", error);
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "An error occurred while creating the exam. Please try again.",
+        });
+        setIsLoading(false); // Only set loading to false on error
+    });
 
-      const examsCollection = collection(firestore, 'exams');
-      await addDocumentNonBlocking(examsCollection, newExam);
-
-      toast({
-        title: "Exam Added",
-        description: `The exam "${title}" has been successfully created.`,
-      });
-      router.push('/admin/exams');
-
-    } catch (error) {
-      console.error("Error adding exam: ", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "An error occurred while adding the exam. Please try again.",
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    toast({
+      title: "Exam Added",
+      description: `The exam "${title}" is being created.`,
+    });
+    router.push('/admin/exams');
   };
 
   return (
