@@ -38,6 +38,7 @@ import type { Student, Exam } from '@/lib/types';
 import { format } from 'date-fns';
 
 type ExamStep = 'login' | 'verification' | 'selectExam' | 'confirmStart' | 'takingExam' | 'finished';
+type VerificationSubStep = 'face' | 'voice' | 'verified';
 
 export default function ExamPage() {
   const [step, setStep] = useState<ExamStep>('login');
@@ -48,7 +49,7 @@ export default function ExamPage() {
   const [student, setStudent] = useState<Student | null>(null);
   
   // Verification state
-  const [isVerified, setIsVerified] = useState(false);
+  const [verificationSubStep, setVerificationSubStep] = useState<VerificationSubStep>('face');
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'success' | 'error'>('pending');
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
@@ -228,7 +229,7 @@ export default function ExamPage() {
    // Effect for confirmStart step
   useEffect(() => {
     if (step === 'confirmStart') {
-      speak("Can we start the exam?", () => {
+      speak("Can we start the exam? Are you ready?", () => {
         // After asking, start listening for "yes"
         startRecording(async (audioDataUri) => {
           setIsProcessing(true);
@@ -248,20 +249,24 @@ export default function ExamPage() {
             speak("Sorry, I had trouble understanding. Please try again.", () => {
                 setIsProcessing(false);
             });
+          } finally {
+            if (!result.transcription.toLowerCase().includes('yes')) {
+              setIsProcessing(false);
+            }
           }
         });
       });
-    } else {
-       if (isRecording) stopRecording();
+    } else if (step !== 'confirmStart' && isRecording) {
+      stopRecording();
     }
   }, [step, speak, startRecording, stopRecording, isRecording]);
 
   // Effect to read the first question when exam starts
   useEffect(() => {
-    if (step === 'takingExam' && examStarted && currentQuestionIndex === 0) {
+    if (step === 'takingExam' && examStarted && currentQuestionIndex === 0 && answers.every(a => a === '')) {
       handleReadQuestion();
     }
-  }, [step, examStarted, currentQuestionIndex, handleReadQuestion]);
+  }, [step, examStarted, currentQuestionIndex, handleReadQuestion, answers]);
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -293,39 +298,38 @@ export default function ExamPage() {
     }
   };
 
-  const handleStartVerification = () => {
+  const handleFaceVerification = () => {
     setIsProcessing(true);
     setVerificationStatus('pending');
+    // Simulate face verification
     setTimeout(() => {
-      // In a real scenario, this would involve AI-based face and voice matching.
-      // For this prototype, we simulate a successful verification if a student record was found.
-      if (student) {
-        setIsVerified(true);
-        setIsProcessing(false);
+      if (student?.hasImage) {
         setVerificationStatus('success');
-        toast({
-          title: 'Identity Confirmed',
-          description: 'You can now proceed to select your exam.',
-        });
+        toast({ title: 'Face Confirmed', description: 'Proceeding to voice verification.' });
+        setVerificationSubStep('voice');
       } else {
-        handleSimulateMismatch();
+        setVerificationStatus('error');
+        toast({ variant: 'destructive', title: 'Face Verification Failed', description: 'No profile image found for this student.' });
       }
+      setIsProcessing(false);
     }, 2000);
   };
-
-  const handleSimulateMismatch = () => {
-    setIsProcessing(true);
-    setVerificationStatus('pending');
-    setTimeout(() => {
-      setIsVerified(false);
-      setIsProcessing(false);
-      setVerificationStatus('error');
-      toast({
-        variant: 'destructive',
-        title: 'Verification Failed',
-        description: 'Identity verification failed. Please try again.',
-      });
-    }, 2000);
+  
+  const handleVoiceVerification = () => {
+      setIsProcessing(true);
+      setVerificationStatus('pending');
+      // Simulate voice verification after recording
+      setTimeout(() => {
+          if (student?.hasVoice) {
+              setVerificationStatus('success');
+              toast({ title: 'Voice Confirmed', description: 'Verification successful.' });
+              setVerificationSubStep('verified');
+          } else {
+              setVerificationStatus('error');
+              toast({ variant: 'destructive', title: 'Voice Verification Failed', description: 'No voice sample found for this student.' });
+          }
+          setIsProcessing(false);
+      }, 2000);
   };
 
   const handleStartExam = (exam: Exam) => {
@@ -438,7 +442,7 @@ export default function ExamPage() {
     });
 
     const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(url);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `vocalpen-exam-${student.regNumber}.txt`;
@@ -454,7 +458,7 @@ export default function ExamPage() {
 
   const progressValue =
     step === 'login' ? 0 
-    : step === 'verification' ? 25
+    : step === 'verification' ? (verificationSubStep === 'face' ? 15 : verificationSubStep === 'voice' ? 30 : 45)
     : step === 'selectExam' ? 50
     : step === 'confirmStart' ? 70
     : step === 'takingExam' ? 75 + (((currentQuestionIndex + 1) / (questions.length || 1)) * 25)
@@ -489,68 +493,90 @@ export default function ExamPage() {
     </Card>
   );
 
-  const renderVerificationStep = () => (
-    <Card className="w-full max-w-2xl">
-      <CardHeader>
-        <CardTitle>Identity Confirmation</CardTitle>
-        <CardDescription>Welcome, <span className='font-bold text-primary'>{student?.name}</span>. Please confirm your identity to continue.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed overflow-hidden">
-            <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
-            <div className="absolute inset-0 flex justify-center items-center bg-black/30">
-                {isProcessing ? (
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                ) : verificationStatus === 'success' ? (
-                    <CheckCircle className="h-24 w-24 text-green-500" />
-                ) : verificationStatus === 'error' ? (
-                    <XCircle className="h-24 w-24 text-destructive" />
-                ) : !hasCameraPermission ? (
-                    <div className="text-center text-white p-4">
-                        <Camera className="h-12 w-12 mx-auto mb-2" />
-                        <p>Camera access is required for verification.</p>
+  const renderVerificationStep = () => {
+    let title, description, content, footer;
+    
+    switch (verificationSubStep) {
+        case 'face':
+            title = 'Face Verification';
+            description = 'Please position your face in the camera frame.';
+            content = (
+                <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed overflow-hidden">
+                    <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+                    <div className="absolute inset-0 flex justify-center items-center bg-black/30">
+                        {isProcessing ? <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                        : verificationStatus === 'success' ? <CheckCircle className="h-24 w-24 text-green-500" />
+                        : verificationStatus === 'error' ? <XCircle className="h-24 w-24 text-destructive" />
+                        : !hasCameraPermission ? (
+                            <div className="text-center text-white p-4">
+                                <Camera className="h-12 w-12 mx-auto mb-2" />
+                                <p>Camera access is required.</p>
+                            </div>
+                        ) : null}
                     </div>
-                ) : null}
-            </div>
-        </div>
-        <Alert>
-          <User className="h-4 w-4" />
-          <AlertTitle>Instructions</AlertTitle>
-          <AlertDescription>
-            Center your face in the camera and record a short voice sample stating your full name. This is a simulated check for prototype purposes.
-          </AlertDescription>
-        </Alert>
-        <div className="flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground">
-              {isVoiceRecording ? "Recording your voice... Say your name." : "Ready to record your voice sample."}
-            </p>
-             <Button 
-                onClick={isVoiceRecording ? stopRecording : () => startRecording(handleStartVerification)}
-                size="lg"
-                className={`rounded-full w-20 h-20 text-white ${isVoiceRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
-                disabled={isProcessing || !hasCameraPermission}
-            >
-                {isVoiceRecording ? <Square className="h-8 w-8" /> : <Mic className="h-8 w-8" />}
-            </Button>
-        </div>
-      </CardContent>
-      <CardFooter className="flex-col sm:flex-row justify-between gap-2">
-         <Button variant="outline" onClick={() => { setStep('login'); setStudent(null); setIsVerified(false); setVerificationStatus('pending')}}>
-            Back to Login
-        </Button>
-        {isVerified ? (
-          <Button onClick={() => setStep('selectExam')} className="bg-green-500 hover:bg-green-600 w-full sm:w-auto">
-            Proceed to Exam Selection <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        ) : (
-          <Button onClick={handleStartVerification} disabled={isProcessing || isVoiceRecording} className="w-full sm:w-auto">
-            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Confirm Identity
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
-  );
+                </div>
+            );
+            footer = (
+                <Button onClick={handleFaceVerification} disabled={isProcessing || !hasCameraPermission}>
+                    {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Scan Face
+                </Button>
+            );
+            break;
+        case 'voice':
+            title = 'Voice Verification';
+            description = 'Please record yourself saying your full name.';
+            content = (
+                <div className="flex flex-col items-center justify-center gap-4 h-64">
+                    <p className="text-sm text-muted-foreground">
+                        {isVoiceRecording ? "Recording... Say your name now." : "Ready to record voice sample."}
+                    </p>
+                    <Button 
+                        onClick={isVoiceRecording ? stopRecording : () => startRecording(handleVoiceVerification)}
+                        size="lg"
+                        className={`rounded-full w-24 h-24 text-white ${isVoiceRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+                        disabled={isProcessing}
+                    >
+                        {isVoiceRecording ? <Square className="h-10 w-10" /> : <Mic className="h-10 w-10" />}
+                    </Button>
+                     {isProcessing && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Verifying...</p>}
+                </div>
+            );
+            footer = null;
+            break;
+        case 'verified':
+            title = 'Verification Successful';
+            description = 'Your identity has been confirmed.';
+            content = (
+                <div className="flex flex-col items-center justify-center gap-4 h-64">
+                    <CheckCircle className="h-24 w-24 text-green-500" />
+                    <p className="text-lg font-medium">Welcome, {student?.name}</p>
+                </div>
+            );
+            footer = (
+                 <Button onClick={() => setStep('selectExam')} className="bg-green-500 hover:bg-green-600 w-full sm:w-auto">
+                    Proceed to Exam Selection <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+            );
+            break;
+    }
+    
+    return (
+        <Card className="w-full max-w-2xl">
+            <CardHeader>
+                <CardTitle>{title}</CardTitle>
+                <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent>{content}</CardContent>
+            <CardFooter className="justify-between">
+                <Button variant="outline" onClick={() => { setStep('login'); setStudent(null); setVerificationSubStep('face'); setVerificationStatus('pending'); }}>
+                    Back to Login
+                </Button>
+                {footer}
+            </CardFooter>
+        </Card>
+    );
+};
 
   const renderSelectExamStep = () => (
     <Card className="w-full max-w-2xl">
@@ -594,10 +620,10 @@ export default function ExamPage() {
         <CardDescription>The exam will start after you confirm.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col items-center justify-center space-y-4 p-12">
-        {isProcessing ? (
+        {isProcessing || isRecording ? (
           <>
             <Loader2 className="h-16 w-16 animate-spin text-primary" />
-            <p className="text-muted-foreground">Listening...</p>
+            <p className="text-muted-foreground">Listening for "yes"...</p>
           </>
         ) : (
           <>
