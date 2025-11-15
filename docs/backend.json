@@ -74,16 +74,29 @@
           "type": "string",
           "description": "Name of the student."
         },
-        "email": {
+        "regNumber": {
           "type": "string",
-          "description": "Email address of the student.",
-          "format": "email"
+          "description": "Registration number of the student."
+        },
+        "imageUrl": {
+            "type": "string",
+            "description": "URL to the student's profile image."
+        },
+        "voiceUrl": {
+            "type": "string",
+            "description": "URL to the student's voice recording."
+        },
+        "hasImage": {
+            "type": "boolean"
+        },
+        "hasVoice": {
+            "type": "boolean"
         }
       },
       "required": [
         "id",
         "name",
-        "email"
+        "regNumber"
       ]
     },
     "Response": {
@@ -135,80 +148,25 @@
     ]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/exams/{examId}",
-        "definition": {
-          "entityName": "Exam",
-          "schema": {
-            "$ref": "#/backend/entities/Exam"
-          },
-          "description": "Stores exam details. Includes `examId` as the document ID.",
-          "params": [
-            {
-              "name": "examId",
-              "description": "The unique identifier of the exam."
-            }
-          ]
-        }
+    "collections": {
+      "students": {
+        "schema": {
+          "$ref": "#/entities/Student"
+        },
+        "description": "Stores student profiles including registration number, image and voice data for verification."
       },
-      {
-        "path": "/exams/{examId}/questions/{questionId}",
-        "definition": {
-          "entityName": "Question",
-          "schema": {
-            "$ref": "#/backend/entities/Question"
-          },
-          "description": "Stores questions associated with an exam. Includes `examId` and `questionId` in each question document.",
-          "params": [
-            {
-              "name": "examId",
-              "description": "The unique identifier of the exam."
-            },
-            {
-              "name": "questionId",
-              "description": "The unique identifier of the question."
-            }
-          ]
-        }
+      "exams": {
+        "schema": {
+          "$ref": "#/entities/Exam"
+        },
+        "description": "Stores exam details, including questions as a subcollection."
       },
-      {
-        "path": "/students/{studentId}",
-        "definition": {
-          "entityName": "Student",
-          "schema": {
-            "$ref": "#/backend/entities/Student"
-          },
-          "description": "Stores student profiles.  The document ID is the `studentId`.",
-          "params": [
-            {
-              "name": "studentId",
-              "description": "The unique identifier of the student."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/students/{studentId}/responses/{responseId}",
-        "definition": {
-          "entityName": "Response",
-          "schema": {
-            "$ref": "#/backend/entities/Response"
-          },
-          "description": "Stores student responses to exam questions. Nested under the student document to simplify security rules based on user ownership. Includes `studentId`, `examId`, `questionId`, and `responseId` in each response document.",
-          "params": [
-            {
-              "name": "studentId",
-              "description": "The unique identifier of the student."
-            },
-            {
-              "name": "responseId",
-              "description": "The unique identifier of the response."
-            }
-          ]
-        }
+      "responses": {
+        "schema": {
+          "$ref": "#/entities/Response"
+        },
+        "description": "Stores student responses to exam questions."
       }
-    ],
-    "reasoning": "The Firestore structure is designed to securely store exam-related data, student information, and their responses. It prioritizes authorization independence and supports efficient list operations, adhering to the DBAC (Database-Based Access Control) principle. The structure ensures data integrity by associating each response with a specific student, question, and exam. It leverages path-based ownership for user-specific data and includes denormalization where necessary to avoid hierarchical authorization dependencies and ensure atomicity.\n\n*   **Exams Collection:** Stores general exam information. Access to exam details can be controlled at this level, determining who can create, read, update, or delete exams. No specific authorization fields are denormalized at the root level, since we are using simple path based rules.\n*   **Questions Subcollection:** Questions are stored within each exam document. The `examId` field within each question ensures a clear link to its parent exam. This 1:N relationship is handled via subcollection.  Authorization is implicitly handled at the exam level (path based ownership).\n*   **Students Collection:** Contains student profiles. Data stored includes student name and email. Access is controlled on a per-student basis using path-based ownership (`/students/{studentId}`).\n*   **Responses Subcollection:** Student responses are nested under the `students` collection. This structure ensures that only the student (or authorized roles) can access and modify their own responses. The `studentId`, `examId`, and `questionId` fields maintain relationships between responses, exams, questions, and students.  The responses are grouped into a subcollection `/students/{studentId}/responses/{responseId}` to simplify security rules by scoping them down to the user.\n\nThis structure avoids the need for complex `get()` calls in security rules, promoting authorization independence and enabling atomic operations. Data is segregated based on access needs (e.g., student profiles vs. exam questions), which simplifies security rules and enables secure list operations (QAPs)."
+    }
   }
 }

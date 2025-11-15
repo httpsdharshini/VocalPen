@@ -1,20 +1,32 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Home, LogOut, PlusCircle, Upload, Users, FileText } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Home, LogOut, PlusCircle, Upload, Users, FileText, Loader2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
-
-// Mock Data for students
-const students = [
-  { id: 1, regNumber: "S12345", name: "John Doe", hasImage: true, hasVoice: true },
-  { id: 2, regNumber: "S12346", name: "Jane Smith", hasImage: true, hasVoice: false },
-  { id: 3, regNumber: "S12347", name: "Peter Jones", hasImage: false, hasVoice: true },
-];
+import { useCollection, useFirestore } from '@/firebase';
+import { collection } from "firebase/firestore";
+import type { Student } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useMemoFirebase } from '@/firebase';
 
 export default function ManageStudentsPage() {
+  const firestore = useFirestore();
+  const studentsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, "students");
+  }, [firestore]);
+  
+  const { data: students, isLoading, error } = useCollection<Student>(studentsQuery);
+
+  const handleDelete = (id: string) => {
+    // Implement delete functionality here
+    console.log("Delete student with id:", id);
+  };
+  
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="w-64 border-r bg-card p-4 flex flex-col">
@@ -35,7 +47,7 @@ export default function ManageStudentsPage() {
             </Link>
              <Link href="/admin/exams" passHref>
                 <Button variant="ghost" className="justify-start gap-2">
-                    <Upload /> Upload Questions
+                    <Upload /> Manage Exams
                 </Button>
             </Link>
              <Link href="/admin/submissions" passHref>
@@ -77,7 +89,37 @@ export default function ManageStudentsPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {students.map((student) => (
+                            {isLoading && (
+                              <tr>
+                                <td colSpan={5} className="text-center p-8">
+                                  <div className="flex justify-center items-center">
+                                    <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+                                    <span>Loading students...</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            {error && (
+                               <tr>
+                                <td colSpan={5} className="p-4">
+                                  <Alert variant="destructive">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertTitle>Error</AlertTitle>
+                                    <AlertDescription>
+                                      Failed to load students. Please check your connection and try again.
+                                    </AlertDescription>
+                                  </Alert>
+                                </td>
+                              </tr>
+                            )}
+                            {!isLoading && !error && students?.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="text-center p-8">
+                                  <p className="text-muted-foreground">No students found. Add a new student to get started.</p>
+                                </td>
+                              </tr>
+                            )}
+                            {!isLoading && students && students.map((student) => (
                                 <tr key={student.id} className="border-b">
                                     <td className="p-4">{student.regNumber}</td>
                                     <td className="p-4">{student.name}</td>
@@ -86,7 +128,7 @@ export default function ManageStudentsPage() {
                                     <td className="p-4">
                                         <div className="flex gap-2">
                                             <Button variant="outline" size="sm">Edit</Button>
-                                            <Button variant="destructive" size="sm">Delete</Button>
+                                            <Button variant="destructive" size="sm" onClick={() => handleDelete(student.id)}>Delete</Button>
                                         </div>
                                     </td>
                                 </tr>
