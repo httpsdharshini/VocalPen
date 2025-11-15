@@ -15,13 +15,13 @@ const TranscribeStudentAnswerInputSchema = z.object({
   audioDataUri: z
     .string()
     .describe(
-      'The audio data URI of the student\'s answer, including MIME type and Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.'
+      "The audio data URI of the student's answer, including MIME type and Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
 });
 export type TranscribeStudentAnswerInput = z.infer<typeof TranscribeStudentAnswerInputSchema>;
 
 const TranscribeStudentAnswerOutputSchema = z.object({
-  transcription: z.string().describe('The transcribed text of the student\'s answer.'),
+  transcription: z.string().describe("The transcribed text of the student's answer."),
 });
 export type TranscribeStudentAnswerOutput = z.infer<typeof TranscribeStudentAnswerOutputSchema>;
 
