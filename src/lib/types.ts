@@ -12,7 +12,8 @@ export type Exam = {
     id: string;
     title: string;
     duration: number; // in minutes
-    questions: string[];
+    questionPaperUrl?: string;
+    questions?: string[]; // Kept for backward compatibility, will be phased out
 };
 
 export type Submission = {

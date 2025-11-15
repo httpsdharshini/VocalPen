@@ -18,19 +18,15 @@
           "type": "number",
           "description": "Duration of the exam in minutes."
         },
-        "questions": {
-          "type": "array",
-          "description": "A list of questions in the exam.",
-          "items": {
-            "type": "string"
-          }
+        "questionPaperUrl": {
+          "type": "string",
+          "description": "URL of the uploaded question paper PDF in Firebase Storage."
         }
       },
       "required": [
         "id",
         "title",
-        "duration",
-        "questions"
+        "duration"
       ]
     },
     "Student": {

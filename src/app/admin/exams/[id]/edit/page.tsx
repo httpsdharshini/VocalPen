@@ -4,19 +4,19 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Home, LogOut, Upload, Users, FileText, ArrowLeft, Loader2 } from "lucide-react";
+import { Home, LogOut, Upload, Users, FileText, ArrowLeft, Loader2, Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Exam } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 
 export default function EditExamPage() {
   const router = useRouter();
@@ -25,11 +25,11 @@ export default function EditExamPage() {
 
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
-  const [questions, setQuestions] = useState('');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const { firestore } = useFirebase();
 
   const examDocRef = useMemoFirebase(() => {
     if (!firestore || !examId) return null;
@@ -42,17 +42,16 @@ export default function EditExamPage() {
     if (exam) {
       setTitle(exam.title);
       setDuration(String(exam.duration));
-      setQuestions(exam.questions.join('\n'));
     }
   }, [exam]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !duration || !questions) {
+    if (!title || !duration) {
       toast({
         variant: "destructive",
         title: "Missing Fields",
-        description: "Please fill out all fields.",
+        description: "Please fill out title and duration.",
       });
       return;
     }
@@ -61,11 +60,17 @@ export default function EditExamPage() {
     try {
       if (!examDocRef) throw new Error("Exam document reference not available");
       
-      const updatedExamData: Partial<Exam> = {
+      const updatedExamData: Partial<Omit<Exam, 'id'>> = {
         title,
         duration: parseInt(duration, 10),
-        questions: questions.split('\n').filter(q => q.trim() !== ''),
       };
+
+      if (pdfFile) {
+        const storage = getStorage();
+        const storageRef = ref(storage, `questionPapers/${Date.now()}_${pdfFile.name}`);
+        const uploadResult = await uploadBytes(storageRef, pdfFile);
+        updatedExamData.questionPaperUrl = await getDownloadURL(uploadResult.ref);
+      }
 
       await updateDocumentNonBlocking(examDocRef, updatedExamData);
 
@@ -137,7 +142,7 @@ export default function EditExamPage() {
         <Card className="max-w-4xl mx-auto">
             <CardHeader>
                 <CardTitle>Edit Exam</CardTitle>
-                <CardDescription>Update the exam's details.</CardDescription>
+                <CardDescription>Update the exam's details and question paper.</CardDescription>
             </CardHeader>
             <CardContent>
                 {isLoadingExam ? (
@@ -152,7 +157,7 @@ export default function EditExamPage() {
                     </div>
                      <div className="space-y-2">
                       <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-40 w-full" />
+                      <Skeleton className="h-10 w-full" />
                     </div>
                     <Skeleton className="h-10 w-32" />
                   </div>
@@ -180,15 +185,22 @@ export default function EditExamPage() {
                         />
                     </div>
                      <div className="space-y-2">
-                        <Label htmlFor="questions">Questions</Label>
-                        <Textarea 
-                          id="questions"
-                          placeholder="Enter each question on a new line." 
-                          className="min-h-[200px]" 
-                          value={questions}
-                          onChange={(e) => setQuestions(e.target.value)}
-                          required
+                        <Label htmlFor="qp-pdf">Question Paper (PDF)</Label>
+                        <Input 
+                          id="qp-pdf"
+                          type="file"
+                          accept="application/pdf"
+                          onChange={(e) => setPdfFile(e.target.files ? e.target.files[0] : null)}
                         />
+                        <p className="text-xs text-muted-foreground">Upload a new PDF to replace the existing one.</p>
+                        {exam?.questionPaperUrl && (
+                          <div className="text-sm">
+                            <a href={exam.questionPaperUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary hover:underline">
+                              <LinkIcon className="h-4 w-4" />
+                              View Current Question Paper
+                            </a>
+                          </div>
+                        )}
                     </div>
                     <Button type="submit" disabled={isLoading}>
                       {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
