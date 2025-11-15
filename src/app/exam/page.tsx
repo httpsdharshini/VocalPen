@@ -6,18 +6,20 @@ import { VocalPenLogo } from '@/components/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
+import { useFirebase, useCollection, useMemoFirebase } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { mockExam, type Question } from '@/lib/mock-data';
 import {
   AlertTriangle,
   Camera,
-  Check,
   CheckCircle,
   ChevronRight,
   Download,
   Loader2,
+  LogIn,
   Mic,
   RotateCcw,
   Scissors,
@@ -27,55 +29,74 @@ import {
   User,
   Volume2,
   XCircle,
+  BookOpen,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import type { Student, Exam } from '@/lib/types';
+import { format } from 'date-fns';
 
-type ExamStep = 'verification' | 'takingExam' | 'finished';
+type ExamStep = 'login' | 'verification' | 'selectExam' | 'takingExam' | 'finished';
 
 export default function ExamPage() {
-  const [step, setStep] = useState<ExamStep>('verification');
+  const [step, setStep] = useState<ExamStep>('login');
+
+  // Login state
+  const [regNumber, setRegNumber] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [student, setStudent] = useState<Student | null>(null);
+  
+  // Verification state
   const [isVerified, setIsVerified] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'success' | 'error'>('pending');
-
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<string[]>([]);
-  const [currentAnswer, setCurrentAnswer] = useState('');
-
-  const [timeLeft, setTimeLeft] = useState(mockExam.timeLimit * 60);
-  const [examStarted, setExamStarted] = useState(false);
-
-  const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
-  const { toast } = useToast();
-
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
 
+  // Exam selection state
+  const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
 
-  const currentQuestion = mockExam.questions[currentQuestionIndex];
+  // Taking exam state
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [currentAnswer, setCurrentAnswer] = useState('');
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [examStarted, setExamStarted] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-    useEffect(() => {
+  const { toast } = useToast();
+  const { firestore } = useFirebase();
+
+  const questions = useMemo(() => {
+    return selectedExam?.questionText?.split('\n').filter(q => q.trim() !== '') || [];
+  }, [selectedExam]);
+
+  // Fetch exams for selection
+  const examsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'exams') : null, [firestore]);
+  const { data: exams, isLoading: isLoadingExams } = useCollection<Exam>(examsQuery);
+  
+  // Camera permission for verification
+  useEffect(() => {
     if (step === 'verification') {
         const getCameraPermission = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             setHasCameraPermission(true);
-
             if (videoRef.current) {
-            videoRef.current.srcObject = stream;
+                videoRef.current.srcObject = stream;
             }
         } catch (error) {
             console.error('Error accessing camera:', error);
             setHasCameraPermission(false);
             toast({
-            variant: 'destructive',
-            title: 'Camera Access Denied',
-            description: 'Please enable camera permissions in your browser settings to use this app.',
+                variant: 'destructive',
+                title: 'Camera Access Denied',
+                description: 'Please enable camera permissions in your browser settings.',
             });
         }
         };
@@ -99,22 +120,58 @@ export default function ExamPage() {
         setTimeLeft(prevTime => prevTime - 1);
       }, 1000);
       return () => clearInterval(timer);
-    } else if (timeLeft === 0) {
+    } else if (timeLeft === 0 && examStarted) {
       handleFinishExam();
     }
   }, [examStarted, step, timeLeft]);
+
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regNumber.trim() || !firestore) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Please enter a registration number.' });
+        return;
+    }
+    setIsLoggingIn(true);
+    try {
+        const studentsRef = collection(firestore, 'students');
+        const q = query(studentsRef, where('regNumber', '==', regNumber.trim()));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            toast({ variant: 'destructive', title: 'Login Failed', description: 'No student found with that registration number.' });
+            setStudent(null);
+        } else {
+            const studentDoc = querySnapshot.docs[0];
+            setStudent({ id: studentDoc.id, ...studentDoc.data() } as Student);
+            toast({ title: 'Login Successful', description: `Welcome, ${studentDoc.data().name}.` });
+            setStep('verification');
+        }
+    } catch (error) {
+        console.error("Login error:", error);
+        toast({ variant: 'destructive', title: 'Error', description: 'An error occurred during login. Please try again.' });
+    } finally {
+        setIsLoggingIn(false);
+    }
+  };
 
   const handleStartVerification = () => {
     setIsProcessing(true);
     setVerificationStatus('pending');
     setTimeout(() => {
-      setIsVerified(true);
-      setIsProcessing(false);
-      setVerificationStatus('success');
-      toast({
-        title: 'Verification Successful',
-        description: 'You can now proceed to the exam.',
-      });
+      // In a real scenario, this would involve AI-based face and voice matching.
+      // We are simulating a successful verification based on finding the student.
+      if (student) {
+        setIsVerified(true);
+        setIsProcessing(false);
+        setVerificationStatus('success');
+        toast({
+          title: 'Verification Successful',
+          description: 'You can now proceed to select your exam.',
+        });
+      } else {
+        handleSimulateMismatch();
+      }
     }, 2000);
   };
 
@@ -128,20 +185,24 @@ export default function ExamPage() {
       toast({
         variant: 'destructive',
         title: 'Verification Failed',
-        description: 'Facial recognition did not match. Please try again.',
+        description: 'Identity verification failed. Please try again.',
       });
     }, 2000);
   };
 
-  const handleStartExam = () => {
+  const handleStartExam = (exam: Exam) => {
+    setSelectedExam(exam);
+    setTimeLeft(exam.duration * 60);
+    setAnswers(Array(exam.questionText.split('\n').filter(q => q.trim() !== '').length).fill(''));
     setStep('takingExam');
     setExamStarted(true);
-    setAnswers(Array(mockExam.questions.length).fill(''));
   };
 
   const handleReadQuestion = () => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(currentQuestion.text);
+    if (!selectedExam) return;
+    const currentQuestionText = questions[currentQuestionIndex];
+    if ('speechSynthesis' in window && currentQuestionText) {
+      const utterance = new SpeechSynthesisUtterance(currentQuestionText);
       window.speechSynthesis.speak(utterance);
     } else {
       toast({
@@ -167,7 +228,7 @@ export default function ExamPage() {
       };
 
       mediaRecorderRef.current.onstop = async () => {
-        const isVerification = step === 'verification';
+        const isVerificationStep = step === 'verification';
         setIsProcessing(true);
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const reader = new FileReader();
@@ -175,7 +236,7 @@ export default function ExamPage() {
         reader.onloadend = async () => {
           const audioDataUri = reader.result as string;
           try {
-            if (isVerification) {
+            if (isVerificationStep) {
                 // Mock voice verification
                 setTimeout(() => {
                     handleStartVerification();
@@ -192,9 +253,7 @@ export default function ExamPage() {
               description: 'Could not transcribe audio. Please try again.',
             });
           } finally {
-            if (!isVerification) {
-                setIsProcessing(false);
-            }
+            setIsProcessing(false);
             // Clean up stream tracks
             stream.getTracks().forEach(track => track.stop());
           }
@@ -202,7 +261,7 @@ export default function ExamPage() {
       };
 
       mediaRecorderRef.current.start();
-      if(isVerification) {
+      if(isVerificationStep) {
         setIsVoiceRecording(true);
       } else {
         setIsRecording(true);
@@ -256,10 +315,9 @@ export default function ExamPage() {
     const newAnswers = [...answers];
     newAnswers[currentQuestionIndex] = currentAnswer;
     setAnswers(newAnswers);
-    console.log(`Answer for Q${currentQuestionIndex + 1} saved:`, currentAnswer);
 
     setCurrentAnswer('');
-    if (currentQuestionIndex < mockExam.questions.length - 1) {
+    if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
       setCurrentAnswer(answers[currentQuestionIndex + 1] || '');
     } else {
@@ -267,20 +325,47 @@ export default function ExamPage() {
     }
   };
   
-  const handleFinishExam = (finalAnswers = answers) => {
-    setStep('finished');
+  const handleFinishExam = async (finalAnswers = answers) => {
+    if (!firestore || !student || !selectedExam) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not submit exam. Missing required data.' });
+      return;
+    }
+    
+    // Save the final answer for the current question
+    const newAnswers = [...finalAnswers];
+    if (currentAnswer) {
+      newAnswers[currentQuestionIndex] = currentAnswer;
+    }
+    setAnswers(newAnswers);
+    
     setExamStarted(false);
-    console.log('Exam Finished. Final answers:', finalAnswers);
+    
+    try {
+        const submissionData = {
+            studentId: student.id,
+            examId: selectedExam.id,
+            answers: newAnswers,
+            timestamp: new Date(),
+        };
+        const responsesCollection = collection(firestore, 'responses');
+        await addDoc(responsesCollection, submissionData);
+        setStep('finished');
+
+    } catch (error) {
+        console.error("Error submitting exam:", error);
+        toast({ variant: 'destructive', title: 'Submission Failed', description: 'There was an error submitting your answers.' });
+    }
   };
 
   const handleDownloadAnswers = () => {
-    let content = `Exam: ${mockExam.title}\n`;
-    content += `Student ID: student-01\n`;
+    if (!selectedExam || !student) return;
+    let content = `Exam: ${selectedExam.title}\n`;
+    content += `Student: ${student.name} (${student.regNumber})\n`;
     content += `Date: ${new Date().toLocaleString()}\n\n`;
 
-    mockExam.questions.forEach((q, index) => {
+    questions.forEach((q, index) => {
       content += `--- Question ${index + 1} ---\n`;
-      content += `${q.text}\n\n`;
+      content += `${q}\n\n`;
       content += `--- Answer ---\n`;
       content += `${answers[index] || 'No answer provided.'}\n\n`;
     });
@@ -289,11 +374,10 @@ export default function ExamPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'vocalpen-exam-answers.txt';
+    a.download = `vocalpen-exam-${student.regNumber}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
-
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -302,13 +386,46 @@ export default function ExamPage() {
   };
 
   const progressValue =
-    step === 'verification' ? 0 : step === 'takingExam' ? ((currentQuestionIndex + 1) / mockExam.questions.length) * 100 : 100;
+    step === 'login' ? 0 
+    : step === 'verification' ? 25
+    : step === 'selectExam' ? 50
+    : step === 'takingExam' ? 50 + (((currentQuestionIndex + 1) / (questions.length || 1)) * 50)
+    : 100;
   
+  const renderLoginStep = () => (
+     <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle>Student Login</CardTitle>
+        <CardDescription>Please enter your registration number to proceed.</CardDescription>
+      </CardHeader>
+      <form onSubmit={handleLogin}>
+        <CardContent className="space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="regNumber">Registration Number</Label>
+                <Input
+                    id="regNumber"
+                    placeholder="e.g., S12345"
+                    value={regNumber}
+                    onChange={e => setRegNumber(e.target.value)}
+                    required
+                />
+            </div>
+        </CardContent>
+        <CardFooter>
+            <Button type="submit" className="w-full" disabled={isLoggingIn}>
+                {isLoggingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+                Login
+            </Button>
+        </CardFooter>
+      </form>
+    </Card>
+  );
+
   const renderVerificationStep = () => (
     <Card className="w-full max-w-2xl">
       <CardHeader>
-        <CardTitle>1. Identity Verification</CardTitle>
-        <CardDescription>Please verify your identity to begin the exam.</CardDescription>
+        <CardTitle>Identity Verification</CardTitle>
+        <CardDescription>Welcome, <span className='font-bold text-primary'>{student?.name}</span>. Please verify your identity to continue.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed overflow-hidden">
@@ -332,7 +449,7 @@ export default function ExamPage() {
           <User className="h-4 w-4" />
           <AlertTitle>Instructions</AlertTitle>
           <AlertDescription>
-            Center your face in the camera view. Then, record a short voice sample for verification. Please state your full name clearly.
+            Center your face in the camera, then record a short voice sample stating your full name clearly.
           </AlertDescription>
         </Alert>
         <div className="flex flex-col items-center gap-4">
@@ -350,20 +467,55 @@ export default function ExamPage() {
         </div>
       </CardContent>
       <CardFooter className="flex-col sm:flex-row justify-between gap-2">
-        <Button variant="outline" onClick={handleSimulateMismatch} disabled={isProcessing}>
-            <AlertTriangle className="mr-2 h-4 w-4" /> Simulate Mismatch
+         <Button variant="outline" onClick={() => { setStep('login'); setStudent(null); setIsVerified(false); setVerificationStatus('pending')}}>
+            Back to Login
         </Button>
         {isVerified ? (
-          <Button onClick={handleStartExam} className="bg-green-500 hover:bg-green-600 w-full sm:w-auto">
-            Proceed to Exam <ChevronRight className="ml-2 h-4 w-4" />
+          <Button onClick={() => setStep('selectExam')} className="bg-green-500 hover:bg-green-600 w-full sm:w-auto">
+            Proceed to Exam Selection <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         ) : (
           <Button onClick={handleStartVerification} disabled={isProcessing || isVoiceRecording} className="w-full sm:w-auto">
             {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Start Verification
+            Verify Identity
           </Button>
         )}
       </CardFooter>
+    </Card>
+  );
+
+  const renderSelectExamStep = () => (
+    <Card className="w-full max-w-2xl">
+        <CardHeader>
+            <CardTitle>Select Exam</CardTitle>
+            <CardDescription>Choose the exam you wish to take.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            {isLoadingExams ? (
+                <div className="flex items-center justify-center p-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="ml-2">Loading exams...</p>
+                </div>
+            ) : exams && exams.length > 0 ? (
+                <div className="space-y-4">
+                    {exams.map(exam => (
+                        <button key={exam.id} onClick={() => handleStartExam(exam)} className='w-full'>
+                            <Card className="hover:bg-muted/50 hover:shadow-md transition-all">
+                                <CardContent className="p-4 flex items-center justify-between">
+                                    <div className="text-left">
+                                        <h3 className="font-semibold">{exam.title}</h3>
+                                        <p className="text-sm text-muted-foreground">{exam.duration} minutes</p>
+                                    </div>
+                                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                                </CardContent>
+                            </Card>
+                        </button>
+                    ))}
+                </div>
+            ) : (
+                <p className="text-center text-muted-foreground p-8">No exams available at this time.</p>
+            )}
+        </CardContent>
     </Card>
   );
 
@@ -372,7 +524,7 @@ export default function ExamPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
             <div>
-                <CardTitle>Question {currentQuestionIndex + 1} of {mockExam.questions.length}</CardTitle>
+                <CardTitle>Question {currentQuestionIndex + 1} of {questions.length}</CardTitle>
                 <CardDescription>Read the question carefully before answering.</CardDescription>
             </div>
             <Button variant="outline" size="icon" onClick={handleReadQuestion}>
@@ -380,7 +532,7 @@ export default function ExamPage() {
             </Button>
         </CardHeader>
         <CardContent>
-            <p className="text-lg leading-relaxed">{currentQuestion.text}</p>
+            <p className="text-lg leading-relaxed">{questions[currentQuestionIndex]}</p>
         </CardContent>
       </Card>
       <Card>
@@ -423,7 +575,7 @@ export default function ExamPage() {
                 </Button>
                 <div className="w-32 text-right">
                     <Button onClick={handleNextQuestion} disabled={isProcessing || isRecording}>
-                        {currentQuestionIndex === mockExam.questions.length - 1 ? 'Finish Exam' : 'Next Question'}
+                        {currentQuestionIndex === questions.length - 1 ? 'Finish Exam' : 'Next Question'}
                         <ChevronRight className="ml-2 h-4 w-4" />
                     </Button>
                 </div>
@@ -443,7 +595,7 @@ export default function ExamPage() {
         <CardContent className="space-y-4">
             <div className="flex justify-center items-baseline gap-2 text-2xl">
                 <span className="text-muted-foreground">Time Taken:</span>
-                <span className="font-bold">{formatTime((mockExam.timeLimit*60) - timeLeft)}</span>
+                <span className="font-bold">{formatTime((selectedExam?.duration ?? 0)*60 - timeLeft)}</span>
             </div>
             <p className="text-muted-foreground">Your answers have been saved. You can download a copy for your records.</p>
         </CardContent>
@@ -457,6 +609,18 @@ export default function ExamPage() {
         </CardFooter>
      </Card>
   );
+
+  const renderStep = () => {
+    switch (step) {
+        case 'login': return renderLoginStep();
+        case 'verification': return renderVerificationStep();
+        case 'selectExam': return renderSelectExamStep();
+        case 'takingExam': return renderTakingExamStep();
+        case 'finished': return renderFinishedStep();
+        default: return renderLoginStep();
+    }
+  }
+
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-background font-body">
@@ -472,6 +636,12 @@ export default function ExamPage() {
                     <span>Time Left: {formatTime(timeLeft)}</span>
                 </div>
             )}
+             {student && (step === 'verification' || step === 'selectExam') && (
+                <div className="flex items-center gap-2 text-sm font-medium">
+                    <User className="h-5 w-5 text-primary" />
+                    <span>{student.name} ({student.regNumber})</span>
+                </div>
+            )}
         </div>
       </header>
       
@@ -479,17 +649,15 @@ export default function ExamPage() {
         <div className="w-full max-w-4xl space-y-4 mb-8">
           <Progress value={progressValue} className="w-full h-2" />
           <div className="flex justify-between text-xs text-muted-foreground font-medium">
-            <span className={step === 'verification' ? 'text-primary' : ''}>Verification</span>
-            <span className={step === 'takingExam' ? 'text-primary' : ''}>Exam in Progress</span>
-            <span className={step === 'finished' ? 'text-primary' : ''}>Finished</span>
+            <span className={step === 'login' ? 'text-primary font-semibold' : ''}>Login</span>
+            <span className={step === 'verification' ? 'text-primary font-semibold' : ''}>Verification</span>
+            <span className={step === 'selectExam' ? 'text-primary font-semibold' : ''}>Select Exam</span>
+            <span className={step === 'takingExam' ? 'text-primary font-semibold' : ''}>Exam in Progress</span>
+            <span className={step === 'finished' ? 'text-primary font-semibold' : ''}>Finished</span>
           </div>
         </div>
-        {step === 'verification' && renderVerificationStep()}
-        {step === 'takingExam' && renderTakingExamStep()}
-        {step === 'finished' && renderFinishedStep()}
+        {renderStep()}
       </main>
     </div>
   );
 }
-
-    

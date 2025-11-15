@@ -3,14 +3,14 @@ export type Question = {
   text: string;
 };
 
-export type Exam = {
+export type MockExam = {
   id: string;
   title: string;
   timeLimit: number; // in minutes
   questions: Question[];
 };
 
-export const mockExam: Exam = {
+export const mockExam: MockExam = {
   id: 'exam-01',
   title: 'Introduction to Modern History',
   timeLimit: 30,
