@@ -29,7 +29,7 @@ export default function EditExamPage() {
   const [isLoading, setIsLoading] = useState(false);
   
   const { toast } = useToast();
-  const { firestore } = useFirebase();
+  const { firestore, storage } = useFirebase();
 
   const examDocRef = useMemoFirebase(() => {
     if (!firestore || !examId) return null;
@@ -70,32 +70,32 @@ export default function EditExamPage() {
       title,
       duration: parseInt(duration, 10),
     };
+    
+    // First, update the text fields
+    updateDocumentNonBlocking(examDocRef, updatedExamData);
 
-    if (pdfFile) {
-        const storage = getStorage();
-        const storageRef = ref(storage, `questionPapers/${Date.now()}_${pdfFile.name}`);
+    // Then, if there's a new file, upload it and update the URL
+    if (pdfFile && storage) {
+        const storageRef = ref(storage, `questionPapers/${examId}_${pdfFile.name}`);
         
         uploadBytes(storageRef, pdfFile).then(uploadResult => {
             getDownloadURL(uploadResult.ref).then(downloadURL => {
-                const finalUpdate = { ...updatedExamData, questionPaperUrl: downloadURL };
-                updateDocumentNonBlocking(examDocRef, finalUpdate);
+                // Update the document with the new URL
+                updateDocumentNonBlocking(examDocRef, { questionPaperUrl: downloadURL });
             });
         }).catch(error => {
             console.error("Error uploading file: ", error);
             toast({
                 variant: "destructive",
                 title: "File Upload Error",
-                description: "An error occurred while uploading the PDF. Please try again.",
+                description: "An error occurred while uploading the new PDF. Please try again.",
             });
         });
-
-    } else {
-        updateDocumentNonBlocking(examDocRef, updatedExamData);
     }
 
     toast({
       title: "Updating Exam",
-      description: `The exam "${title}" is being updated.`,
+      description: `The exam "${title}" is being updated in the background.`,
     });
     router.push('/admin/exams');
   };
