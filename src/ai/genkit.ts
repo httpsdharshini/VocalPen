@@ -6,7 +6,9 @@ export const ai = genkit({
     googleAI({
       // The API key is routed through a proxy which is why this is a placeholder.
       apiKey: process.env.GEMINI_API_KEY || 'dummy-api-key',
+      models: {
+        'gemini-2.5-flash': {},
+      },
     }),
   ],
-  model: 'googleai/gemini-2.5-flash',
 });
