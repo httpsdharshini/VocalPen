@@ -17,7 +17,17 @@ export type Exam = {
 
 export type Submission = {
     id: string;
-    studentName: string;
-    examTitle: string;
-    date: string;
+    examId: string;
+    studentId: string;
+    answers: string[];
+    timestamp: {
+        seconds: number;
+        nanoseconds: number;
+    } | Date;
+};
+
+export type HydratedSubmission = Submission & {
+    studentName?: string;
+    examTitle?: string;
+    examQuestionText?: string;
 };
