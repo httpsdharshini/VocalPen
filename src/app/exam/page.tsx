@@ -32,12 +32,12 @@ import {
   BookOpen,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import type { Student, Exam } from '@/lib/types';
 import { format } from 'date-fns';
 
-type ExamStep = 'login' | 'verification' | 'selectExam' | 'takingExam' | 'finished';
+type ExamStep = 'login' | 'verification' | 'selectExam' | 'confirmStart' | 'takingExam' | 'finished';
 
 export default function ExamPage() {
   const [step, setStep] = useState<ExamStep>('login');
@@ -79,6 +79,22 @@ export default function ExamPage() {
   // Fetch exams for selection
   const examsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'exams') : null, [firestore]);
   const { data: exams, isLoading: isLoadingExams } = useCollection<Exam>(examsQuery);
+
+  const speak = useCallback((text: string, onEnd?: () => void) => {
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      if (onEnd) {
+        utterance.onend = onEnd;
+      }
+      window.speechSynthesis.speak(utterance);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Unsupported Browser',
+        description: 'Text-to-speech is not supported in your browser.',
+      });
+    }
+  }, [toast]);
   
   // Camera permission for verification
   useEffect(() => {
@@ -124,6 +140,128 @@ export default function ExamPage() {
       handleFinishExam();
     }
   }, [examStarted, step, timeLeft]);
+
+
+  const startRecording = useCallback(async (onStopCallback?: (audioDataUri: string) => void) => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = event => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const audioDataUri = reader.result as string;
+          if (onStopCallback) {
+            onStopCallback(audioDataUri);
+          }
+          // Clean up stream tracks
+          stream.getTracks().forEach(track => track.stop());
+        };
+      };
+
+      mediaRecorderRef.current.start();
+      if(step === 'verification') {
+        setIsVoiceRecording(true);
+      } else {
+        setIsRecording(true);
+      }
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Microphone Access Denied',
+        description: 'Please allow microphone access to record.',
+      });
+    }
+  }, [step, toast]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      if(step === 'verification') {
+        setIsVoiceRecording(false);
+      } else {
+        setIsRecording(false);
+      }
+    }
+  }, [step]);
+
+
+  const handleReadQuestion = useCallback(() => {
+    if (!selectedExam) return;
+    const currentQuestionText = questions[currentQuestionIndex];
+    if (currentQuestionText) {
+      speak(currentQuestionText, () => {
+        // Automatically start recording after question is read
+        startRecording(async (audioDataUri) => {
+            setIsProcessing(true);
+             try {
+                const result = await transcribeStudentAnswer({ audioDataUri });
+                setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+            } catch (error) {
+                console.error('Transcription error:', error);
+                toast({
+                  variant: 'destructive',
+                  title: 'Audio Processing Error',
+                  description: 'Could not process audio. Please try again.',
+                });
+            } finally {
+                setIsProcessing(false);
+            }
+        });
+      });
+    }
+  }, [selectedExam, questions, currentQuestionIndex, speak, startRecording, toast]);
+  
+
+   // Effect for confirmStart step
+  useEffect(() => {
+    if (step === 'confirmStart') {
+      speak("Can we start the exam?", () => {
+        // After asking, start listening for "yes"
+        startRecording(async (audioDataUri) => {
+          setIsProcessing(true);
+          try {
+            const result = await transcribeStudentAnswer({ audioDataUri });
+            if (result.transcription.toLowerCase().includes('yes')) {
+              setStep('takingExam');
+              setExamStarted(true);
+            } else {
+              speak("I did not understand. Please say yes to start.", () => {
+                 // Restart listening if response is not "yes"
+                 setIsProcessing(false);
+              });
+            }
+          } catch (error) {
+            console.error('Confirmation error:', error);
+            speak("Sorry, I had trouble understanding. Please try again.", () => {
+                setIsProcessing(false);
+            });
+          }
+        });
+      });
+    } else {
+       if (isRecording) stopRecording();
+    }
+  }, [step, speak, startRecording, stopRecording, isRecording]);
+
+  // Effect to read the first question when exam starts
+  useEffect(() => {
+    if (step === 'takingExam' && examStarted && currentQuestionIndex === 0) {
+      handleReadQuestion();
+    }
+  }, [step, examStarted, currentQuestionIndex, handleReadQuestion]);
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -194,98 +332,7 @@ export default function ExamPage() {
     setSelectedExam(exam);
     setTimeLeft(exam.duration * 60);
     setAnswers(Array(exam.questionText.split('\n').filter(q => q.trim() !== '').length).fill(''));
-    setStep('takingExam');
-    setExamStarted(true);
-  };
-
-  const handleReadQuestion = () => {
-    if (!selectedExam) return;
-    const currentQuestionText = questions[currentQuestionIndex];
-    if ('speechSynthesis' in window && currentQuestionText) {
-      const utterance = new SpeechSynthesisUtterance(currentQuestionText);
-      window.speechSynthesis.speak(utterance);
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Unsupported Browser',
-        description: 'Text-to-speech is not supported in your browser.',
-      });
-    }
-  };
-
-  const startRecording = async () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = event => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const isVerificationStep = step === 'verification';
-        setIsProcessing(true);
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const audioDataUri = reader.result as string;
-          try {
-            if (isVerificationStep) {
-                // This simulates voice verification.
-                // In a real app, you would send this to a voice recognition service.
-                setTimeout(() => {
-                    handleStartVerification();
-                }, 1500)
-            } else {
-                const result = await transcribeStudentAnswer({ audioDataUri });
-                setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
-            }
-          } catch (error) {
-            console.error('Transcription/Verification error:', error);
-            toast({
-              variant: 'destructive',
-              title: 'Audio Processing Error',
-              description: 'Could not process audio. Please try again.',
-            });
-          } finally {
-            setIsProcessing(false);
-            // Clean up stream tracks
-            stream.getTracks().forEach(track => track.stop());
-          }
-        };
-      };
-
-      mediaRecorderRef.current.start();
-      if(isVerificationStep) {
-        setIsVoiceRecording(true);
-      } else {
-        setIsRecording(true);
-      }
-    } catch (error) {
-      console.error('Microphone access error:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Microphone Access Denied',
-        description: 'Please allow microphone access to record your answer.',
-      });
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      if(step === 'verification') {
-        setIsVoiceRecording(false);
-      } else {
-        setIsRecording(false);
-      }
-    }
+    setStep('confirmStart');
   };
 
   const handleVoiceEdit = async (command: string) => {
@@ -321,6 +368,25 @@ export default function ExamPage() {
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
       setCurrentAnswer(answers[currentQuestionIndex + 1] || '');
+      // Read next question automatically
+      speak(questions[currentQuestionIndex + 1], () => {
+        startRecording(async (audioDataUri) => {
+            setIsProcessing(true);
+             try {
+                const result = await transcribeStudentAnswer({ audioDataUri });
+                setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+            } catch (error) {
+                console.error('Transcription error:', error);
+                toast({
+                  variant: 'destructive',
+                  title: 'Audio Processing Error',
+                  description: 'Could not process audio. Please try again.',
+                });
+            } finally {
+                setIsProcessing(false);
+            }
+        });
+      });
     } else {
       handleFinishExam(newAnswers);
     }
@@ -372,7 +438,7 @@ export default function ExamPage() {
     });
 
     const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(url);
     const a = document.createElement('a');
     a.href = url;
     a.download = `vocalpen-exam-${student.regNumber}.txt`;
@@ -390,7 +456,8 @@ export default function ExamPage() {
     step === 'login' ? 0 
     : step === 'verification' ? 25
     : step === 'selectExam' ? 50
-    : step === 'takingExam' ? 50 + (((currentQuestionIndex + 1) / (questions.length || 1)) * 50)
+    : step === 'confirmStart' ? 70
+    : step === 'takingExam' ? 75 + (((currentQuestionIndex + 1) / (questions.length || 1)) * 25)
     : 100;
   
   const renderLoginStep = () => (
@@ -458,7 +525,7 @@ export default function ExamPage() {
               {isVoiceRecording ? "Recording your voice... Say your name." : "Ready to record your voice sample."}
             </p>
              <Button 
-                onClick={isVoiceRecording ? stopRecording : startRecording}
+                onClick={isVoiceRecording ? stopRecording : () => startRecording(handleStartVerification)}
                 size="lg"
                 className={`rounded-full w-20 h-20 text-white ${isVoiceRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
                 disabled={isProcessing || !hasCameraPermission}
@@ -520,13 +587,35 @@ export default function ExamPage() {
     </Card>
   );
 
+  const renderConfirmStartStep = () => (
+    <Card className="w-full max-w-2xl text-center">
+      <CardHeader>
+        <CardTitle>Ready to Begin?</CardTitle>
+        <CardDescription>The exam will start after you confirm.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col items-center justify-center space-y-4 p-12">
+        {isProcessing ? (
+          <>
+            <Loader2 className="h-16 w-16 animate-spin text-primary" />
+            <p className="text-muted-foreground">Listening...</p>
+          </>
+        ) : (
+          <>
+            <Mic className="h-16 w-16 text-primary" />
+            <p className="text-xl font-medium">Say "Yes" to start the exam.</p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   const renderTakingExamStep = () => (
     <div className="w-full max-w-4xl space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
             <div>
                 <CardTitle>Question {currentQuestionIndex + 1} of {questions.length}</CardTitle>
-                <CardDescription>Read the question carefully before answering.</CardDescription>
+                <CardDescription>Listen to the question, then dictate your answer.</CardDescription>
             </div>
             <Button variant="outline" size="icon" onClick={handleReadQuestion}>
                 <Volume2 className="h-5 w-5" />
@@ -564,10 +653,20 @@ export default function ExamPage() {
             </div>
             <div className="flex w-full items-center justify-between">
                 <div className="w-32">
-                  {isProcessing && <p className="text-sm text-muted-foreground flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</p>}
+                  {(isRecording || isProcessing) && <p className="text-sm text-muted-foreground flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> {isRecording ? 'Recording...' : 'Processing...'}</p>}
                 </div>
                 <Button 
-                    onClick={isRecording ? stopRecording : startRecording}
+                    onClick={isRecording ? stopRecording : () => startRecording(async (audioDataUri) => {
+                        setIsProcessing(true);
+                         try {
+                            const result = await transcribeStudentAnswer({ audioDataUri });
+                            setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+                        } catch (error) {
+                            console.error('Transcription error:', error);
+                        } finally {
+                            setIsProcessing(false);
+                        }
+                    })}
                     size="lg"
                     className={`rounded-full w-20 h-20 text-white ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
                     disabled={isProcessing}
@@ -616,6 +715,7 @@ export default function ExamPage() {
         case 'login': return renderLoginStep();
         case 'verification': return renderVerificationStep();
         case 'selectExam': return renderSelectExamStep();
+        case 'confirmStart': return renderConfirmStartStep();
         case 'takingExam': return renderTakingExamStep();
         case 'finished': return renderFinishedStep();
         default: return renderLoginStep();
@@ -637,7 +737,7 @@ export default function ExamPage() {
                     <span>Time Left: {formatTime(timeLeft)}</span>
                 </div>
             )}
-             {student && (step === 'verification' || step === 'selectExam') && (
+             {student && (step !== 'login' && step !== 'finished') && (
                 <div className="flex items-center gap-2 text-sm font-medium">
                     <User className="h-5 w-5 text-primary" />
                     <span>{student.name} ({student.regNumber})</span>
@@ -653,7 +753,7 @@ export default function ExamPage() {
             <span className={step === 'login' ? 'text-primary font-semibold' : ''}>Login</span>
             <span className={step === 'verification' ? 'text-primary font-semibold' : ''}>Verification</span>
             <span className={step === 'selectExam' ? 'text-primary font-semibold' : ''}>Select Exam</span>
-            <span className={step === 'takingExam' ? 'text-primary font-semibold' : ''}>Exam in Progress</span>
+             <span className={step === 'confirmStart' || step === 'takingExam' ? 'text-primary font-semibold' : ''}>Exam in Progress</span>
             <span className={step === 'finished' ? 'text-primary font-semibold' : ''}>Finished</span>
           </div>
         </div>
