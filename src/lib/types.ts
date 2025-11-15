@@ -11,8 +11,8 @@ export type Student = {
 export type Exam = {
     id: string;
     title: string;
-    questions: number;
-    timeLimit: number;
+    duration: number; // in minutes
+    questions: string[];
 };
 
 export type Submission = {

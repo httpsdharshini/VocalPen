@@ -10,54 +10,27 @@
           "type": "string",
           "description": "Unique identifier for the Exam entity."
         },
-        "name": {
+        "title": {
           "type": "string",
           "description": "Name of the exam."
-        },
-        "description": {
-          "type": "string",
-          "description": "Description of the exam."
         },
         "duration": {
           "type": "number",
           "description": "Duration of the exam in minutes."
+        },
+        "questions": {
+          "type": "array",
+          "description": "A list of questions in the exam.",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
         "id",
-        "name",
-        "description",
-        "duration"
-      ]
-    },
-    "Question": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Question",
-      "type": "object",
-      "description": "Represents a question in an exam.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Question entity."
-        },
-        "examId": {
-          "type": "string",
-          "description": "Reference to Exam. (Relationship: Exam 1:N Question)"
-        },
-        "text": {
-          "type": "string",
-          "description": "The text of the question."
-        },
-        "order": {
-          "type": "number",
-          "description": "The order of the question in the exam."
-        }
-      },
-      "required": [
-        "id",
-        "examId",
-        "text",
-        "order"
+        "title",
+        "duration",
+        "questions"
       ]
     },
     "Student": {
@@ -111,32 +84,30 @@
         },
         "examId": {
           "type": "string",
-          "description": "Reference to Exam. (Relationship: Exam 1:N Response)"
-        },
-        "questionId": {
-          "type": "string",
-          "description": "Reference to Question. (Relationship: Question 1:N Response)"
+          "description": "Reference to Exam."
         },
         "studentId": {
           "type": "string",
-          "description": "Reference to Student. (Relationship: Student 1:N Response)"
+          "description": "Reference to Student."
         },
-        "answerText": {
-          "type": "string",
-          "description": "The student's answer to the question."
+        "answers": {
+          "type": "array",
+          "description": "The student's answers to the questions.",
+          "items": {
+            "type": "string"
+          }
         },
         "timestamp": {
           "type": "string",
-          "description": "Timestamp of when the answer was recorded.",
+          "description": "Timestamp of when the exam was submitted.",
           "format": "date-time"
         }
       },
       "required": [
         "id",
         "examId",
-        "questionId",
         "studentId",
-        "answerText",
+        "answers",
         "timestamp"
       ]
     }
@@ -159,7 +130,7 @@
         "schema": {
           "$ref": "#/entities/Exam"
         },
-        "description": "Stores exam details, including questions as a subcollection."
+        "description": "Stores exam details, including questions."
       },
       "responses": {
         "schema": {

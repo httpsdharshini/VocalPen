@@ -1,20 +1,51 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Home, LogOut, PlusCircle, Upload, Users, FileText } from "lucide-react";
+import { Home, LogOut, PlusCircle, Upload, Users, FileText, Loader2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
-
-// Mock Data for exams
-const exams = [
-  { id: 1, title: "Introduction to History", questions: 3, timeLimit: 30 },
-  { id: 2, title: "Algebra Midterm", questions: 10, timeLimit: 60 },
-  { id: 3, title: "Physics Final", questions: 25, timeLimit: 120 },
-];
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, doc } from "firebase/firestore";
+import type { Exam } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from '@/hooks/use-toast';
 
 export default function ManageExamsPage() {
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const examsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, "exams");
+  }, [firestore]);
+  
+  const { data: exams, isLoading, error } = useCollection<Exam>(examsQuery);
+  const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
+
+  const handleDelete = (exam: Exam) => {
+    if (!firestore) return;
+    const examDocRef = doc(firestore, 'exams', exam.id);
+    deleteDocumentNonBlocking(examDocRef);
+    toast({
+        title: "Exam Deleted",
+        description: `The exam "${exam.title}" has been removed.`,
+    });
+    setExamToDelete(null);
+  };
+  
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="w-64 border-r bg-card p-4 flex flex-col">
@@ -76,15 +107,47 @@ export default function ManageExamsPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {exams.map((exam) => (
+                            {isLoading && (
+                              <tr>
+                                <td colSpan={4} className="text-center p-8">
+                                  <div className="flex justify-center items-center">
+                                    <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+                                    <span>Loading exams...</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            {error && (
+                               <tr>
+                                <td colSpan={4} className="p-4">
+                                  <Alert variant="destructive">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertTitle>Error</AlertTitle>
+                                    <AlertDescription>
+                                      Failed to load exams. Please check your connection and try again.
+                                    </AlertDescription>
+                                  </Alert>
+                                </td>
+                              </tr>
+                            )}
+                            {!isLoading && !error && exams?.length === 0 && (
+                              <tr>
+                                <td colSpan={4} className="text-center p-8">
+                                  <p className="text-muted-foreground">No exams found. Create a new exam to get started.</p>
+                                </td>
+                              </tr>
+                            )}
+                            {!isLoading && exams?.map((exam) => (
                                 <tr key={exam.id} className="border-b">
-                                    <td className="p-4">{exam.title}</td>
-                                    <td className="p-4">{exam.questions}</td>
-                                    <td className="p-4">{exam.timeLimit}</td>
+                                    <td className="p-4 font-medium">{exam.title}</td>
+                                    <td className="p-4">{exam.questions.length}</td>
+                                    <td className="p-4">{exam.duration}</td>
                                     <td className="p-4">
                                         <div className="flex gap-2">
-                                            <Button variant="outline" size="sm">Edit</Button>
-                                            <Button variant="destructive" size="sm">Delete</Button>
+                                            <Link href={`/admin/exams/${exam.id}/edit`} passHref>
+                                                <Button variant="outline" size="sm">Edit</Button>
+                                            </Link>
+                                            <Button variant="destructive" size="sm" onClick={() => setExamToDelete(exam)}>Delete</Button>
                                         </div>
                                     </td>
                                 </tr>
@@ -95,6 +158,23 @@ export default function ManageExamsPage() {
             </CardContent>
         </Card>
       </main>
+
+       {examToDelete && (
+        <AlertDialog open={!!examToDelete} onOpenChange={() => setExamToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the exam <span className='font-bold'>{examToDelete.title}</span>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleDelete(examToDelete)}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

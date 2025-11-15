@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Home, LogOut, Upload, Users, FileText, ArrowLeft, Loader2 } from "lucide-react";
@@ -10,22 +10,41 @@ import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from '@/hooks/use-toast';
-import { useFirestore } from '@/firebase';
-import { collection } from 'firebase/firestore';
-import { addDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import type { Exam } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 
-export default function NewExamPage() {
+export default function EditExamPage() {
+  const router = useRouter();
+  const params = useParams();
+  const examId = params.id as string;
+
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
   const [questions, setQuestions] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
-  const router = useRouter();
+  
   const { toast } = useToast();
   const firestore = useFirestore();
+
+  const examDocRef = useMemoFirebase(() => {
+    if (!firestore || !examId) return null;
+    return doc(firestore, 'exams', examId);
+  }, [firestore, examId]);
+
+  const { data: exam, isLoading: isLoadingExam } = useDoc<Exam>(examDocRef);
+
+  useEffect(() => {
+    if (exam) {
+      setTitle(exam.title);
+      setDuration(String(exam.duration));
+      setQuestions(exam.questions.join('\n'));
+    }
+  }, [exam]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,27 +59,28 @@ export default function NewExamPage() {
     setIsLoading(true);
 
     try {
-      const newExam: Omit<Exam, 'id'> = {
+      if (!examDocRef) throw new Error("Exam document reference not available");
+      
+      const updatedExamData: Partial<Exam> = {
         title,
         duration: parseInt(duration, 10),
         questions: questions.split('\n').filter(q => q.trim() !== ''),
       };
 
-      const examsCollection = collection(firestore, 'exams');
-      await addDocumentNonBlocking(examsCollection, newExam);
+      await updateDocumentNonBlocking(examDocRef, updatedExamData);
 
       toast({
-        title: "Exam Added",
-        description: `The exam "${title}" has been successfully created.`,
+        title: "Exam Updated",
+        description: `The exam "${title}" has been successfully updated.`,
       });
       router.push('/admin/exams');
 
     } catch (error) {
-      console.error("Error adding exam: ", error);
+      console.error("Error updating exam: ", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "An error occurred while adding the exam. Please try again.",
+        description: "An error occurred while updating the exam. Please try again.",
       });
     } finally {
       setIsLoading(false);
@@ -116,10 +136,27 @@ export default function NewExamPage() {
         </div>
         <Card className="max-w-4xl mx-auto">
             <CardHeader>
-                <CardTitle>Create New Exam</CardTitle>
-                <CardDescription>Fill in the details to create a new exam paper.</CardDescription>
+                <CardTitle>Edit Exam</CardTitle>
+                <CardDescription>Update the exam's details.</CardDescription>
             </CardHeader>
             <CardContent>
+                {isLoadingExam ? (
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                     <div className="space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                     <div className="space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-40 w-full" />
+                    </div>
+                    <Skeleton className="h-10 w-32" />
+                  </div>
+                ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-2">
                         <Label htmlFor="title">Exam Title</Label>
@@ -154,10 +191,11 @@ export default function NewExamPage() {
                         />
                     </div>
                     <Button type="submit" disabled={isLoading}>
-                      {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Save Exam
+                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Update Exam
                     </Button>
                 </form>
+                )}
             </CardContent>
         </Card>
       </main>
