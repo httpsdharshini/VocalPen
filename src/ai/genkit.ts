@@ -4,9 +4,10 @@ import {googleAI} from '@genkit-ai/google-genai';
 export const ai = genkit({
   plugins: [
     googleAI({
-      apiKey: process.env.GEMINI_API_KEY || 'dummy-api-key',
+      apiKey: process.env.GEMINI_API_KEY,
       models: {
-        'gemini-pro': {}, // Ensure gemini-pro is configured
+        'gemini-pro': {},
+        'gemini-pro-vision': {},
       },
     }),
   ],
