@@ -5,14 +5,9 @@ import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase";
 
-const fontBody = Inter({
+const fontSans = Inter({
   subsets: ["latin"],
-  variable: "--font-body",
-});
-
-const fontCode = Source_Code_Pro({
-  subsets: ["latin"],
-  variable: "--font-code",
+  variable: "--font-sans",
 });
 
 
@@ -33,7 +28,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet" />
       </head>
-      <body className={cn("font-body antialiased", fontBody.variable, fontCode.variable)}>
+      <body className={cn("font-sans antialiased", fontSans.variable)}>
         <FirebaseClientProvider>
           {children}
           <Toaster />
@@ -42,3 +37,5 @@ export default function RootLayout({
     </html>
   );
 }
+
+    

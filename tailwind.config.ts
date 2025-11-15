@@ -17,9 +17,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        body: ['var(--font-body)', 'Inter', 'sans-serif'],
-        headline: ['var(--font-headline)', 'Inter', 'sans-serif'],
-        code: ['var(--font-code)', 'Source Code Pro', 'monospace'],
+        sans: ['var(--font-sans)', 'Inter', 'sans-serif'],
+        code: ['Source Code Pro', 'monospace'],
       },
       colors: {
         background: 'hsl(var(--background))',
@@ -104,3 +103,5 @@ export default {
   },
   plugins: [require('tailwindcss-animate')],
 } satisfies Config;
+
+    

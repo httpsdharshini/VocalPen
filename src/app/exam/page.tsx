@@ -3,7 +3,6 @@
 import { editAnswerWithVoiceCommands } from '@/ai/flows/edit-answers-with-voice-commands';
 import { transcribeStudentAnswer } from '@/ai/flows/transcribe-student-answers';
 import { VocalPenLogo } from '@/components/icons';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,7 +12,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useFirebase, useCollection, useMemoFirebase } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import {
-  AlertTriangle,
   Camera,
   CheckCircle,
   ChevronRight,
@@ -29,13 +27,11 @@ import {
   User,
   Volume2,
   XCircle,
-  BookOpen,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import type { Student, Exam } from '@/lib/types';
-import { format } from 'date-fns';
 
 type ExamStep = 'login' | 'verification' | 'selectExam' | 'confirmStart' | 'takingExam' | 'finished';
 type VerificationSubStep = 'face' | 'voice' | 'verified';
@@ -137,7 +133,7 @@ export default function ExamPage() {
         setTimeLeft(prevTime => prevTime - 1);
       }, 1000);
       return () => clearInterval(timer);
-    } else if (timeLeft === 0 && examStarted) {
+    } else if (timeLeft <= 0 && examStarted) {
       handleFinishExam();
     }
   }, [examStarted, step, timeLeft]);
@@ -228,45 +224,46 @@ export default function ExamPage() {
 
    // Effect for confirmStart step
   useEffect(() => {
-    if (step === 'confirmStart') {
-      speak("Can we start the exam? Are you ready?", () => {
-        // After asking, start listening for "yes"
-        startRecording(async (audioDataUri) => {
-          setIsProcessing(true);
-          try {
-            const result = await transcribeStudentAnswer({ audioDataUri });
-            if (result.transcription.toLowerCase().includes('yes')) {
-              setStep('takingExam');
-              setExamStarted(true);
-            } else {
-              speak("I did not understand. Please say yes to start.", () => {
-                 // Restart listening if response is not "yes"
-                 setIsProcessing(false);
-              });
-            }
-          } catch (error) {
-            console.error('Confirmation error:', error);
-            speak("Sorry, I had trouble understanding. Please try again.", () => {
-                setIsProcessing(false);
+    if (step === 'confirmStart' && !isRecording && !isProcessing) {
+      const handleConfirmation = async (audioDataUri: string) => {
+        setIsProcessing(true);
+        try {
+          const result = await transcribeStudentAnswer({ audioDataUri });
+          if (result.transcription.toLowerCase().includes('yes')) {
+            setStep('takingExam');
+            setExamStarted(true);
+          } else {
+            speak("I did not understand. Please say yes to start.", () => {
+               // Restart listening if response is not "yes"
+               setIsProcessing(false); // Allow re-prompting and listening
             });
-          } finally {
-            if (!result.transcription.toLowerCase().includes('yes')) {
-              setIsProcessing(false);
-            }
           }
-        });
+        } catch (error) {
+          console.error('Confirmation error:', error);
+          speak("Sorry, I had trouble understanding. Please try again.", () => {
+              setIsProcessing(false);
+          });
+        }
+      };
+
+      speak("Can we start the exam? Are you ready?", () => {
+        startRecording(handleConfirmation);
+        // Automatically stop recording after a few seconds to process the command
+        setTimeout(() => {
+          stopRecording();
+        }, 3000); // Listen for 3 seconds
       });
-    } else if (step !== 'confirmStart' && isRecording) {
-      stopRecording();
     }
-  }, [step, speak, startRecording, stopRecording, isRecording]);
+  }, [step, isRecording, isProcessing, speak, startRecording, stopRecording]);
 
   // Effect to read the first question when exam starts
   useEffect(() => {
-    if (step === 'takingExam' && examStarted && currentQuestionIndex === 0 && answers.every(a => a === '')) {
+    if (step === 'takingExam' && examStarted && currentQuestionIndex === 0 && answers.length === 0) {
+      // Initialize answers array
+      setAnswers(Array(questions.length).fill(''));
       handleReadQuestion();
     }
-  }, [step, examStarted, currentQuestionIndex, handleReadQuestion, answers]);
+  }, [step, examStarted, currentQuestionIndex, handleReadQuestion, questions.length, answers]);
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -319,6 +316,7 @@ export default function ExamPage() {
       setIsProcessing(true);
       setVerificationStatus('pending');
       // Simulate voice verification after recording
+      stopRecording(); // stop recording before verifying
       setTimeout(() => {
           if (student?.hasVoice) {
               setVerificationStatus('success');
@@ -370,10 +368,11 @@ export default function ExamPage() {
 
     setCurrentAnswer('');
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-      setCurrentAnswer(answers[currentQuestionIndex + 1] || '');
+      const nextIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIndex);
+      setCurrentAnswer(answers[nextIndex] || '');
       // Read next question automatically
-      speak(questions[currentQuestionIndex + 1], () => {
+      speak(questions[nextIndex], () => {
         startRecording(async (audioDataUri) => {
             setIsProcessing(true);
              try {
@@ -396,14 +395,15 @@ export default function ExamPage() {
     }
   };
   
-  const handleFinishExam = async (finalAnswers = answers) => {
+  const handleFinishExam = async (finalAnswers? : string[]) => {
+     const answersToSave = finalAnswers || answers;
     if (!firestore || !student || !selectedExam) {
       toast({ variant: 'destructive', title: 'Error', description: 'Could not submit exam. Missing required data.' });
       return;
     }
     
     // Save the final answer for the current question
-    const newAnswers = [...finalAnswers];
+    const newAnswers = [...answersToSave];
     if (currentAnswer) {
       newAnswers[currentQuestionIndex] = currentAnswer;
     }
@@ -532,7 +532,7 @@ export default function ExamPage() {
                         {isVoiceRecording ? "Recording... Say your name now." : "Ready to record voice sample."}
                     </p>
                     <Button 
-                        onClick={isVoiceRecording ? stopRecording : () => startRecording(handleVoiceVerification)}
+                        onClick={isVoiceRecording ? handleVoiceVerification : () => startRecording()}
                         size="lg"
                         className={`rounded-full w-24 h-24 text-white ${isVoiceRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
                         disabled={isProcessing}
@@ -623,7 +623,7 @@ export default function ExamPage() {
         {isProcessing || isRecording ? (
           <>
             <Loader2 className="h-16 w-16 animate-spin text-primary" />
-            <p className="text-muted-foreground">Listening for "yes"...</p>
+            <p className="text-muted-foreground">{isRecording ? 'Listening...' : 'Processing...'}</p>
           </>
         ) : (
           <>
@@ -750,7 +750,7 @@ export default function ExamPage() {
 
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-background font-body">
+    <div className="flex min-h-screen flex-col items-center bg-background font-sans">
       <header className="w-full border-b bg-card">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
             <Link href="/" className="flex items-center gap-2 font-semibold">
@@ -788,3 +788,5 @@ export default function ExamPage() {
     </div>
   );
 }
+
+    
