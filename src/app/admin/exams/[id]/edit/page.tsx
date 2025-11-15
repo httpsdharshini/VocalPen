@@ -11,7 +11,7 @@ import { VocalPenLogo } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
-import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirebase, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import type { Exam } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
