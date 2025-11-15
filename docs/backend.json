@@ -1,0 +1,214 @@
+{
+  "entities": {
+    "Exam": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Exam",
+      "type": "object",
+      "description": "Represents an exam.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Exam entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the exam."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the exam."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration of the exam in minutes."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "duration"
+      ]
+    },
+    "Question": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Question",
+      "type": "object",
+      "description": "Represents a question in an exam.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Question entity."
+        },
+        "examId": {
+          "type": "string",
+          "description": "Reference to Exam. (Relationship: Exam 1:N Question)"
+        },
+        "text": {
+          "type": "string",
+          "description": "The text of the question."
+        },
+        "order": {
+          "type": "number",
+          "description": "The order of the question in the exam."
+        }
+      },
+      "required": [
+        "id",
+        "examId",
+        "text",
+        "order"
+      ]
+    },
+    "Student": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Student",
+      "type": "object",
+      "description": "Represents a student taking an exam.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Student entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the student."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the student.",
+          "format": "email"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email"
+      ]
+    },
+    "Response": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Response",
+      "type": "object",
+      "description": "Represents a student's response to a question in an exam.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Response entity."
+        },
+        "examId": {
+          "type": "string",
+          "description": "Reference to Exam. (Relationship: Exam 1:N Response)"
+        },
+        "questionId": {
+          "type": "string",
+          "description": "Reference to Question. (Relationship: Question 1:N Response)"
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Reference to Student. (Relationship: Student 1:N Response)"
+        },
+        "answerText": {
+          "type": "string",
+          "description": "The student's answer to the question."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the answer was recorded.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "examId",
+        "questionId",
+        "studentId",
+        "answerText",
+        "timestamp"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/exams/{examId}",
+        "definition": {
+          "entityName": "Exam",
+          "schema": {
+            "$ref": "#/backend/entities/Exam"
+          },
+          "description": "Stores exam details. Includes `examId` as the document ID.",
+          "params": [
+            {
+              "name": "examId",
+              "description": "The unique identifier of the exam."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/exams/{examId}/questions/{questionId}",
+        "definition": {
+          "entityName": "Question",
+          "schema": {
+            "$ref": "#/backend/entities/Question"
+          },
+          "description": "Stores questions associated with an exam. Includes `examId` and `questionId` in each question document.",
+          "params": [
+            {
+              "name": "examId",
+              "description": "The unique identifier of the exam."
+            },
+            {
+              "name": "questionId",
+              "description": "The unique identifier of the question."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/students/{studentId}",
+        "definition": {
+          "entityName": "Student",
+          "schema": {
+            "$ref": "#/backend/entities/Student"
+          },
+          "description": "Stores student profiles.  The document ID is the `studentId`.",
+          "params": [
+            {
+              "name": "studentId",
+              "description": "The unique identifier of the student."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/students/{studentId}/responses/{responseId}",
+        "definition": {
+          "entityName": "Response",
+          "schema": {
+            "$ref": "#/backend/entities/Response"
+          },
+          "description": "Stores student responses to exam questions. Nested under the student document to simplify security rules based on user ownership. Includes `studentId`, `examId`, `questionId`, and `responseId` in each response document.",
+          "params": [
+            {
+              "name": "studentId",
+              "description": "The unique identifier of the student."
+            },
+            {
+              "name": "responseId",
+              "description": "The unique identifier of the response."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to securely store exam-related data, student information, and their responses. It prioritizes authorization independence and supports efficient list operations, adhering to the DBAC (Database-Based Access Control) principle. The structure ensures data integrity by associating each response with a specific student, question, and exam. It leverages path-based ownership for user-specific data and includes denormalization where necessary to avoid hierarchical authorization dependencies and ensure atomicity.\n\n*   **Exams Collection:** Stores general exam information. Access to exam details can be controlled at this level, determining who can create, read, update, or delete exams. No specific authorization fields are denormalized at the root level, since we are using simple path based rules.\n*   **Questions Subcollection:** Questions are stored within each exam document. The `examId` field within each question ensures a clear link to its parent exam. This 1:N relationship is handled via subcollection.  Authorization is implicitly handled at the exam level (path based ownership).\n*   **Students Collection:** Contains student profiles. Data stored includes student name and email. Access is controlled on a per-student basis using path-based ownership (`/students/{studentId}`).\n*   **Responses Subcollection:** Student responses are nested under the `students` collection. This structure ensures that only the student (or authorized roles) can access and modify their own responses. The `studentId`, `examId`, and `questionId` fields maintain relationships between responses, exams, questions, and students.  The responses are grouped into a subcollection `/students/{studentId}/responses/{responseId}` to simplify security rules by scoping them down to the user.\n\nThis structure avoids the need for complex `get()` calls in security rules, promoting authorization independence and enabling atomic operations. Data is segregated based on access needs (e.g., student profiles vs. exam questions), which simplifies security rules and enables secure list operations (QAPs)."
+  }
+}
