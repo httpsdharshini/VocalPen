@@ -36,7 +36,7 @@ const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: { schema: TranscribeStudentAnswerInputSchema },
   output: { schema: TranscribeStudentAnswerOutputSchema },
-  model: googleAI.model('gemini-1.5-flash'),
+  model: googleAI.model('gemini-pro'), // Use gemini-pro
   prompt: `
 Transcribe the following audio recording:
 
