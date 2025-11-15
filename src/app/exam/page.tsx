@@ -160,13 +160,13 @@ export default function ExamPage() {
     setVerificationStatus('pending');
     setTimeout(() => {
       // In a real scenario, this would involve AI-based face and voice matching.
-      // We are simulating a successful verification based on finding the student.
+      // For this prototype, we simulate a successful verification if a student record was found.
       if (student) {
         setIsVerified(true);
         setIsProcessing(false);
         setVerificationStatus('success');
         toast({
-          title: 'Verification Successful',
+          title: 'Identity Confirmed',
           description: 'You can now proceed to select your exam.',
         });
       } else {
@@ -237,7 +237,8 @@ export default function ExamPage() {
           const audioDataUri = reader.result as string;
           try {
             if (isVerificationStep) {
-                // Mock voice verification
+                // This simulates voice verification.
+                // In a real app, you would send this to a voice recognition service.
                 setTimeout(() => {
                     handleStartVerification();
                 }, 1500)
@@ -246,11 +247,11 @@ export default function ExamPage() {
                 setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
             }
           } catch (error) {
-            console.error('Transcription error:', error);
+            console.error('Transcription/Verification error:', error);
             toast({
               variant: 'destructive',
-              title: 'Transcription Error',
-              description: 'Could not transcribe audio. Please try again.',
+              title: 'Audio Processing Error',
+              description: 'Could not process audio. Please try again.',
             });
           } finally {
             setIsProcessing(false);
@@ -424,8 +425,8 @@ export default function ExamPage() {
   const renderVerificationStep = () => (
     <Card className="w-full max-w-2xl">
       <CardHeader>
-        <CardTitle>Identity Verification</CardTitle>
-        <CardDescription>Welcome, <span className='font-bold text-primary'>{student?.name}</span>. Please verify your identity to continue.</CardDescription>
+        <CardTitle>Identity Confirmation</CardTitle>
+        <CardDescription>Welcome, <span className='font-bold text-primary'>{student?.name}</span>. Please confirm your identity to continue.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed overflow-hidden">
@@ -449,7 +450,7 @@ export default function ExamPage() {
           <User className="h-4 w-4" />
           <AlertTitle>Instructions</AlertTitle>
           <AlertDescription>
-            Center your face in the camera, then record a short voice sample stating your full name clearly.
+            Center your face in the camera and record a short voice sample stating your full name. This is a simulated check for prototype purposes.
           </AlertDescription>
         </Alert>
         <div className="flex flex-col items-center gap-4">
@@ -477,7 +478,7 @@ export default function ExamPage() {
         ) : (
           <Button onClick={handleStartVerification} disabled={isProcessing || isVoiceRecording} className="w-full sm:w-auto">
             {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Verify Identity
+            Confirm Identity
           </Button>
         )}
       </CardFooter>
