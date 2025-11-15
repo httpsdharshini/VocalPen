@@ -12,11 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase } from '@/firebase';
-import { collection } from 'firebase/firestore';
-import { addDoc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Exam } from '@/lib/types';
-import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 
 export default function NewExamPage() {
@@ -52,7 +50,7 @@ export default function NewExamPage() {
     setIsCreating(true);
 
     try {
-      // 1. Create the exam document shell first and get its reference.
+      // 1. Create the exam document shell first to get its ID.
       const newExamData: Omit<Exam, 'id' | 'questionPaperUrl'> = {
         title,
         duration: parseInt(duration, 10),
@@ -60,36 +58,30 @@ export default function NewExamPage() {
       const examsCollection = collection(firestore, 'exams');
       const docRef = await addDoc(examsCollection, newExamData);
 
-      // 2. Start the file upload process in the background.
-      const storageRef = ref(storage, `questionPapers/${docRef.id}_${pdfFile.name}`);
-      
-      // The promise chain will run in the background without blocking the UI.
-      uploadBytes(storageRef, pdfFile)
-        .then(uploadResult => getDownloadURL(uploadResult.ref))
-        .then(downloadURL => {
-            // 3. Update the document with the URL using the non-blocking helper.
-            updateDocumentNonBlocking(docRef, { questionPaperUrl: downloadURL });
-        })
-        .catch(error => {
-            console.error("Error during background upload/update: ", error);
-            // Optionally, you could implement a more robust global error notification system.
-             toast({
-                variant: "destructive",
-                title: "Background Upload Failed",
-                description: `The exam "${title}" was created, but the PDF failed to upload. You can edit the exam to try again.`,
-                duration: 5000,
-            });
-        });
-
-      // 4. Immediately notify the user and navigate away.
+      // 2. Immediately notify the user and navigate away.
       toast({
         title: "Exam Creation Initiated",
-        description: `The exam "${title}" is being created in the background.`,
+        description: `The exam "${title}" is being created. The PDF is uploading in the background.`,
       });
       router.push('/admin/exams');
 
+      // 3. Start the file upload and subsequent document update process in the background.
+      const storageRef = ref(storage, `questionPapers/${docRef.id}_${pdfFile.name}`);
+      
+      uploadBytes(storageRef, pdfFile)
+        .then(uploadResult => getDownloadURL(uploadResult.ref))
+        .then(downloadURL => {
+            // 4. Update the document with the URL. This does not block the UI.
+            return updateDoc(docRef, { questionPaperUrl: downloadURL });
+        })
+        .catch(error => {
+            console.error("Error during background upload/update: ", error);
+            // Optionally, you could implement a more robust global error notification system
+            // or simply log the error. The user has already been navigated away.
+        });
+
     } catch (error) {
-      console.error("Error creating exam document: ", error);
+      console.error("Error creating initial exam document: ", error);
       toast({
           variant: "destructive",
           title: "Exam Creation Error",

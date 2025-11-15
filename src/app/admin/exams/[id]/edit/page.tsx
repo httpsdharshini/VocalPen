@@ -12,8 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { doc, updateDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Exam } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -72,7 +71,7 @@ export default function EditExamPage() {
     };
     
     // First, update the text fields non-blockingly
-    updateDocumentNonBlocking(examDocRef, updatedExamData);
+    updateDoc(examDocRef, updatedExamData);
 
     // Then, if there's a new file, upload it and update the URL in the background.
     if (pdfFile) {
@@ -81,8 +80,8 @@ export default function EditExamPage() {
         uploadBytes(storageRef, pdfFile)
           .then(uploadResult => getDownloadURL(uploadResult.ref))
           .then(downloadURL => {
-              // Update the document with the new URL non-blockingly
-              updateDocumentNonBlocking(examDocRef, { questionPaperUrl: downloadURL });
+              // Update the document with the new URL
+              return updateDoc(examDocRef, { questionPaperUrl: downloadURL });
           })
           .catch(error => {
               console.error("Error during background file upload/update: ", error);
@@ -97,7 +96,7 @@ export default function EditExamPage() {
 
     toast({
       title: "Update Initiated",
-      description: `The exam "${title}" is being updated in the background.`,
+      description: `The exam "${title}" is being updated. The changes will appear shortly.`,
     });
     
     // Navigate away immediately
