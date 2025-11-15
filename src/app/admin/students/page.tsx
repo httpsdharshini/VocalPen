@@ -1,30 +1,49 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Home, LogOut, PlusCircle, Upload, Users, FileText, Loader2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
-import { useCollection, useFirestore } from '@/firebase';
-import { collection } from "firebase/firestore";
+import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { collection, doc } from "firebase/firestore";
 import type { Student } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useMemoFirebase } from '@/firebase';
+import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from '@/hooks/use-toast';
 
 export default function ManageStudentsPage() {
   const firestore = useFirestore();
+  const { toast } = useToast();
   const studentsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, "students");
   }, [firestore]);
   
   const { data: students, isLoading, error } = useCollection<Student>(studentsQuery);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
 
-  const handleDelete = (id: string) => {
-    // Implement delete functionality here
-    console.log("Delete student with id:", id);
+  const handleDelete = (student: Student) => {
+    if (!firestore) return;
+    const studentDocRef = doc(firestore, 'students', student.id);
+    deleteDocumentNonBlocking(studentDocRef);
+    toast({
+        title: "Student Deleted",
+        description: `${student.name} has been removed.`,
+    });
+    setStudentToDelete(null);
   };
   
   return (
@@ -127,8 +146,10 @@ export default function ManageStudentsPage() {
                                     <td className="p-4">{student.hasVoice ? 'Yes' : 'No'}</td>
                                     <td className="p-4">
                                         <div className="flex gap-2">
-                                            <Button variant="outline" size="sm">Edit</Button>
-                                            <Button variant="destructive" size="sm" onClick={() => handleDelete(student.id)}>Delete</Button>
+                                            <Link href={`/admin/students/${student.id}/edit`} passHref>
+                                                <Button variant="outline" size="sm">Edit</Button>
+                                            </Link>
+                                            <Button variant="destructive" size="sm" onClick={() => setStudentToDelete(student)}>Delete</Button>
                                         </div>
                                     </td>
                                 </tr>
@@ -139,6 +160,23 @@ export default function ManageStudentsPage() {
             </CardContent>
         </Card>
       </main>
+
+       {studentToDelete && (
+        <AlertDialog open={!!studentToDelete} onOpenChange={() => setStudentToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the student record for <span className='font-bold'>{studentToDelete.name}</span>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleDelete(studentToDelete)}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
