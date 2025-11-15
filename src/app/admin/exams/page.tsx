@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Home, LogOut, PlusCircle, Upload, Users, FileText, Loader2, AlertCircle, ExternalLink } from "lucide-react";
+import { Home, LogOut, PlusCircle, Upload, Users, FileText, Loader2, AlertCircle, FileQuestion } from "lucide-react";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
@@ -102,7 +102,7 @@ export default function ManageExamsPage() {
                             <tr>
                                 <th className="p-4 font-medium">Exam Title</th>
                                 <th className="p-4 font-medium">Time Limit (mins)</th>
-                                <th className="p-4 font-medium">Question Paper</th>
+                                <th className="p-4 font-medium">Questions</th>
                                 <th className="p-4 font-medium">Actions</th>
                             </tr>
                         </thead>
@@ -142,12 +142,12 @@ export default function ManageExamsPage() {
                                     <td className="p-4 font-medium">{exam.title}</td>
                                     <td className="p-4">{exam.duration}</td>
                                     <td className="p-4">
-                                      {exam.questionPaperUrl ? (
-                                        <a href={exam.questionPaperUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary hover:underline">
-                                          View PDF <ExternalLink className="h-4 w-4" />
-                                        </a>
+                                      {exam.questionText ? (
+                                        <span className="flex items-center gap-2 text-green-600">
+                                            <FileQuestion className="h-4 w-4" /> Text added
+                                        </span>
                                       ) : (
-                                        <span className="text-muted-foreground">No PDF</span>
+                                        <span className="text-muted-foreground">No text</span>
                                       )}
                                     </td>
                                     <td className="p-4">

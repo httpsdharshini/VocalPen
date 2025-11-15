@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Home, LogOut, Upload, Users, FileText, ArrowLeft, Loader2, Link as LinkIcon } from "lucide-react";
+import { Home, LogOut, Upload, Users, FileText, ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { VocalPenLogo } from "@/components/icons";
@@ -13,9 +13,9 @@ import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Exam } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 
 export default function EditExamPage() {
   const router = useRouter();
@@ -24,11 +24,11 @@ export default function EditExamPage() {
 
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [questionText, setQuestionText] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   
   const { toast } = useToast();
-  const { firestore, storage } = useFirebase();
+  const { firestore } = useFirebase();
 
   const examDocRef = useMemoFirebase(() => {
     if (!firestore || !examId) return null;
@@ -41,25 +41,26 @@ export default function EditExamPage() {
     if (exam) {
       setTitle(exam.title);
       setDuration(String(exam.duration));
+      setQuestionText(exam.questionText || '');
     }
   }, [exam]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !duration) {
+    if (!title || !duration || !questionText) {
       toast({
         variant: "destructive",
         title: "Missing Fields",
-        description: "Please fill out title and duration.",
+        description: "Please fill out all fields.",
       });
       return;
     }
     
-    if (!examDocRef || !storage) {
+    if (!examDocRef) {
         toast({
             variant: "destructive",
             title: "Error",
-            description: "Exam document reference or storage not available. Please try again.",
+            description: "Exam document reference not available. Please try again.",
         });
         return;
     }
@@ -68,39 +69,28 @@ export default function EditExamPage() {
     const updatedExamData: Partial<Omit<Exam, 'id'>> = {
       title,
       duration: parseInt(duration, 10),
+      questionText,
     };
     
-    // First, update the text fields non-blockingly
-    updateDoc(examDocRef, updatedExamData);
-
-    // Then, if there's a new file, upload it and update the URL in the background.
-    if (pdfFile) {
-        const storageRef = ref(storage, `questionPapers/${examId}_${pdfFile.name}`);
-        
-        uploadBytes(storageRef, pdfFile)
-          .then(uploadResult => getDownloadURL(uploadResult.ref))
-          .then(downloadURL => {
-              // Update the document with the new URL
-              return updateDoc(examDocRef, { questionPaperUrl: downloadURL });
-          })
-          .catch(error => {
-              console.error("Error during background file upload/update: ", error);
-              toast({
-                  variant: "destructive",
-                  title: "File Upload Failed",
-                  description: "The exam details were updated, but the new PDF failed to upload. You can try uploading it again.",
-                  duration: 5000,
-              });
-          });
-    }
-
-    toast({
-      title: "Update Initiated",
-      description: `The exam "${title}" is being updated. The changes will appear shortly.`,
-    });
-    
-    // Navigate away immediately
-    router.push('/admin/exams');
+    updateDoc(examDocRef, updatedExamData)
+        .then(() => {
+            toast({
+              title: "Update Successful",
+              description: `The exam "${title}" has been updated.`,
+            });
+            router.push('/admin/exams');
+        })
+        .catch(error => {
+            console.error("Error updating exam: ", error);
+            toast({
+                variant: "destructive",
+                title: "Update Failed",
+                description: "An error occurred while updating the exam.",
+            });
+        })
+        .finally(() => {
+            setIsUpdating(false);
+        });
   };
 
   return (
@@ -153,7 +143,7 @@ export default function EditExamPage() {
         <Card className="max-w-4xl mx-auto">
             <CardHeader>
                 <CardTitle>Edit Exam</CardTitle>
-                <CardDescription>Update the exam's details and question paper.</CardDescription>
+                <CardDescription>Update the exam's details and question paper text.</CardDescription>
             </CardHeader>
             <CardContent>
                 {isLoadingExam ? (
@@ -168,7 +158,7 @@ export default function EditExamPage() {
                     </div>
                      <div className="space-y-2">
                       <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-24 w-full" />
                     </div>
                     <Skeleton className="h-10 w-32" />
                   </div>
@@ -196,22 +186,15 @@ export default function EditExamPage() {
                         />
                     </div>
                      <div className="space-y-2">
-                        <Label htmlFor="qp-pdf">Question Paper (PDF)</Label>
-                        <Input 
-                          id="qp-pdf"
-                          type="file"
-                          accept="application/pdf"
-                          onChange={(e) => setPdfFile(e.target.files ? e.target.files[0] : null)}
+                        <Label htmlFor="qp-text">Question Paper Text</Label>
+                        <Textarea
+                          id="qp-text"
+                          placeholder="Paste the entire question paper text here..."
+                          className="min-h-[250px]"
+                          value={questionText}
+                          onChange={(e) => setQuestionText(e.target.value)}
                         />
-                        <p className="text-xs text-muted-foreground">Upload a new PDF to replace the existing one.</p>
-                        {exam?.questionPaperUrl && (
-                          <div className="text-sm">
-                            <a href={exam.questionPaperUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary hover:underline">
-                              <LinkIcon className="h-4 w-4" />
-                              View Current Question Paper
-                            </a>
-                          </div>
-                        )}
+                        <p className="text-xs text-muted-foreground">Copy and paste the questions for the exam.</p>
                     </div>
                     <Button type="submit" disabled={isUpdating}>
                       {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

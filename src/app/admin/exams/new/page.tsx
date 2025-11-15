@@ -12,37 +12,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
 import { useFirebase } from '@/firebase';
-import { collection, addDoc, updateDoc } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc } from 'firebase/firestore';
 import type { Exam } from '@/lib/types';
+import { Textarea } from '@/components/ui/textarea';
 
 
 export default function NewExamPage() {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('');
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [questionText, setQuestionText] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   const router = useRouter();
   const { toast } = useToast();
-  const { firestore, storage } = useFirebase();
+  const { firestore } = useFirebase();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !duration || !pdfFile) {
+    if (!title || !duration || !questionText) {
       toast({
         variant: "destructive",
         title: "Missing Fields",
-        description: "Please fill out all fields and upload a question paper.",
+        description: "Please fill out all fields.",
       });
       return;
     }
     
-    if (!firestore || !storage) {
+    if (!firestore) {
        toast({
         variant: "destructive",
         title: "Firebase Error",
-        description: "Firestore or Storage is not available. Please try again later.",
+        description: "Firestore is not available. Please try again later.",
       });
       return;
     }
@@ -50,44 +50,29 @@ export default function NewExamPage() {
     setIsCreating(true);
 
     try {
-      // 1. Create the exam document shell first to get its ID.
-      const newExamData: Omit<Exam, 'id' | 'questionPaperUrl'> = {
+      const newExamData: Omit<Exam, 'id'> = {
         title,
         duration: parseInt(duration, 10),
+        questionText,
       };
       const examsCollection = collection(firestore, 'exams');
-      const docRef = await addDoc(examsCollection, newExamData);
+      await addDoc(examsCollection, newExamData);
 
-      // 2. Immediately notify the user and navigate away.
       toast({
-        title: "Exam Creation Initiated",
-        description: `The exam "${title}" is being created. The PDF is uploading in the background.`,
+        title: "Exam Created",
+        description: `The exam "${title}" has been created.`,
       });
       router.push('/admin/exams');
 
-      // 3. Start the file upload and subsequent document update process in the background.
-      const storageRef = ref(storage, `questionPapers/${docRef.id}_${pdfFile.name}`);
-      
-      uploadBytes(storageRef, pdfFile)
-        .then(uploadResult => getDownloadURL(uploadResult.ref))
-        .then(downloadURL => {
-            // 4. Update the document with the URL. This does not block the UI.
-            return updateDoc(docRef, { questionPaperUrl: downloadURL });
-        })
-        .catch(error => {
-            console.error("Error during background upload/update: ", error);
-            // Optionally, you could implement a more robust global error notification system
-            // or simply log the error. The user has already been navigated away.
-        });
-
     } catch (error) {
-      console.error("Error creating initial exam document: ", error);
+      console.error("Error creating exam: ", error);
       toast({
           variant: "destructive",
           title: "Exam Creation Error",
-          description: "An error occurred while creating the exam document. Please try again.",
+          description: "An error occurred while creating the exam. Please try again.",
       });
-       setIsCreating(false);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -141,7 +126,7 @@ export default function NewExamPage() {
         <Card className="max-w-4xl mx-auto">
             <CardHeader>
                 <CardTitle>Create New Exam</CardTitle>
-                <CardDescription>Fill in the details and upload the question paper to create a new exam.</CardDescription>
+                <CardDescription>Fill in the details and paste the questions to create a new exam.</CardDescription>
             </CardHeader>
             <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -167,15 +152,16 @@ export default function NewExamPage() {
                         />
                     </div>
                      <div className="space-y-2">
-                        <Label htmlFor="qp-pdf">Question Paper (PDF)</Label>
-                         <Input 
-                          id="qp-pdf"
-                          type="file"
-                          accept="application/pdf"
-                          onChange={(e) => setPdfFile(e.target.files ? e.target.files[0] : null)}
-                          required
-                        />
-                        <p className="text-xs text-muted-foreground">Upload the exam question paper in PDF format.</p>
+                        <Label htmlFor="qp-text">Question Paper Text</Label>
+                         <Textarea
+                            id="qp-text"
+                            placeholder="Paste the entire question paper text here..."
+                            className="min-h-[250px]"
+                            value={questionText}
+                            onChange={(e) => setQuestionText(e.target.value)}
+                            required
+                         />
+                        <p className="text-xs text-muted-foreground">Copy and paste the questions for the exam.</p>
                     </div>
                     <Button type="submit" disabled={isCreating}>
                       {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
