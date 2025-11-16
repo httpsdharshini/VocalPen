@@ -1,57 +1,66 @@
+
 'use client';
 
-import { ArrowRight, Shield, User } from 'lucide-react';
-import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { VocalPenLogo } from '@/components/icons';
+import { VocalPenLogo } from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowRight, ShieldCheck, User } from "lucide-react";
+import Link from "next/link";
 
-export default function RoleSelectionPage() {
+export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className="flex flex-col items-center justify-center space-y-8">
-        <div className="text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <VocalPenLogo className="h-8 w-8 text-primary" />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+      <div className="max-w-4xl w-full">
+        <header className="text-center mb-12">
+            <div className="inline-flex items-center gap-4 mb-4">
+                <VocalPenLogo className="h-16 w-16 text-primary" />
+                <h1 className="text-5xl font-bold tracking-tight">VocalPen</h1>
             </div>
-            <h1 className="text-4xl font-bold tracking-tight">Welcome to VocalPen</h1>
-            <p className="text-muted-foreground mt-2">Please select your role to continue.</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-2xl">
-          <Card className="text-center hover:shadow-xl transition-shadow">
-            <CardHeader>
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-2">
-                    <User className="h-6 w-6 text-primary" />
-                </div>
-                <CardTitle>Student</CardTitle>
-                <CardDescription>Take an exam using your voice.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Link href="/exam">
-                    <Button className="w-full">
-                        Proceed as Student <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                </Link>
-            </CardContent>
-          </Card>
-          <Card className="text-center hover:shadow-xl transition-shadow">
-            <CardHeader>
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 mb-2">
-                    <Shield className="h-6 w-6 text-accent-foreground" />
-                </div>
-                <CardTitle>Administrator</CardTitle>
-                <CardDescription>Manage exams and students.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Link href="/admin/login">
-                    <Button variant="outline" className="w-full">
-                        Admin Login <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                </Link>
-            </CardContent>
-          </Card>
-        </div>
+            <p className="text-xl text-muted-foreground">
+                An AI-powered exam assistant for voice-based answers.
+            </p>
+        </header>
+
+        <main className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <Card>
+                <CardHeader>
+                    <User className="h-8 w-8 text-primary mb-2" />
+                    <CardTitle>For Students</CardTitle>
+                    <CardDescription>Start your voice-based exam session.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <p className="mb-6 text-muted-foreground">
+                        Proceed to the student portal to log in, verify your identity, and begin your exam using only your voice.
+                    </p>
+                    <Link href="/exam" passHref>
+                        <Button className="w-full">
+                            Go to Student Exam <ArrowRight className="ml-2" />
+                        </Button>
+                    </Link>
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader>
+                    <ShieldCheck className="h-8 w-8 text-primary mb-2" />
+                    <CardTitle>For Administrators</CardTitle>
+                    <CardDescription>Manage exams, students, and submissions.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                     <p className="mb-6 text-muted-foreground">
+                        Access the admin dashboard to create exams, manage student verification data, and review submissions.
+                    </p>
+                    <Link href="/admin/login" passHref>
+                        <Button variant="outline" className="w-full">
+                            Go to Admin Login <ArrowRight className="ml-2" />
+                        </Button>
+                    </Link>
+                </CardContent>
+            </Card>
+        </main>
+         <footer className="text-center mt-12 text-sm text-muted-foreground">
+            <p>&copy; {new Date().getFullYear()} VocalPen. All rights reserved.</p>
+        </footer>
       </div>
-    </main>
+    </div>
   );
 }
