@@ -182,10 +182,16 @@ export default function ExamPage() {
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error', event.error);
+      let description = 'An error occurred during speech recognition.';
+      if (event.error === 'not-allowed') {
+        description = 'Microphone access was denied. Please allow microphone access in your browser settings.';
+      } else if (event.error === 'network') {
+        description = 'A network error occurred. Please check your internet connection and try again.';
+      }
       toast({
         variant: 'destructive',
         title: 'Speech Recognition Error',
-        description: event.error === 'not-allowed' ? 'Microphone access denied.' : 'An error occurred.',
+        description: description,
       });
     };
 
