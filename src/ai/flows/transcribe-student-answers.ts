@@ -1,20 +1,18 @@
+// transcribe-student-answers.ts
+"use server";
 
-// transcribeStudentAnswer.ts
-'use server';
-
-import { ai } from '@/ai/genkit';
-import { googleAI } from '@genkit-ai/google-genai';
-import { z } from 'zod';
+import { ai } from "@/ai/genkit";
+import { z } from "zod";
 
 // =======================
 // SCHEMAS
 // =======================
 
 const TranscribeStudentAnswerInputSchema = z.object({
-  // expecting 'data:audio/wav;base64,...' (or other mimetype)
-  audioDataUri: z.string().describe(
-    "Audio Data URI: 'data:<mimetype>;base64,<encoded_data>'"
-  ),
+  audioDataUri: z
+    .string()
+    .min(10)
+    .describe("Audio Data URI: 'data:<mimetype>;base64,<encoded_data>'"),
 });
 
 export type TranscribeStudentAnswerInput = z.infer<
@@ -34,16 +32,17 @@ export type TranscribeStudentAnswerOutput = z.infer<
 // =======================
 
 const transcribeStudentAnswerPrompt = ai.definePrompt({
-  name: 'transcribeStudentAnswerPrompt',
+  name: "transcribeStudentAnswerPrompt",
   input: { schema: TranscribeStudentAnswerInputSchema },
   output: { schema: TranscribeStudentAnswerOutputSchema },
-  model: 'gemini-pro',
   prompt: `
-Transcribe the following audio recording:
+You are an accurate transcription system.
+Transcribe the student’s audio exactly.
 
 {{media url=audioDataUri}}
 `,
 });
+
 
 // =======================
 // FLOW
@@ -51,25 +50,29 @@ Transcribe the following audio recording:
 
 const transcribeStudentAnswerFlow = ai.defineFlow(
   {
-    name: 'transcribeStudentAnswerFlow',
+    name: "transcribeStudentAnswerFlow",
     inputSchema: TranscribeStudentAnswerInputSchema,
     outputSchema: TranscribeStudentAnswerOutputSchema,
   },
   async (input) => {
-    // validate input (zod)
     TranscribeStudentAnswerInputSchema.parse(input);
 
-    // Call the prompt. Some GenKit versions return `response` or `output`.
-    // This code assumes prompt call returns { output } with the typed schema.
-    const { output } = await transcribeStudentAnswerPrompt(input);
+    const result = await transcribeStudentAnswerPrompt(input);
 
-    if (!output || !output.transcription) {
-      throw new Error('Transcription failed: no output from model.');
+    const transcription = result?.output?.transcription;
+
+    if (!transcription) {
+      console.error("Model output:", result);
+      throw new Error("Transcription failed: No text returned.");
     }
 
-    return output!;
+    return { transcription };
   }
 );
+
+// =======================
+// EXPORT FUNCTION
+// =======================
 
 export async function transcribeStudentAnswer(
   input: TranscribeStudentAnswerInput
