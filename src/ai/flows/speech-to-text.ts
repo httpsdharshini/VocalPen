@@ -45,7 +45,7 @@ const speechToTextFlow = ai.defineFlow(
       },
     };
     const {text} = await ai.generate({
-      model: 'googleai/gemini-2.5-flash-preview',
+      model: 'googleai/gemini-1.5-flash-latest',
       prompt: [
         audioPart,
         'Transcribe this audio. The audio is a person answering an exam question.',
