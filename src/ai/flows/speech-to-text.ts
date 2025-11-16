@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview A speech-to-text AI flow.
@@ -8,9 +7,9 @@
  * - SpeechToTextOutput - The return type for the speechToText function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import {Part} from '@genkit-ai/google-genai';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+import { Part } from '@genkit-ai/google-genai';
 
 const SpeechToTextInputSchema = z.object({
   audioDataUri: z
@@ -38,19 +37,21 @@ const speechToTextFlow = ai.defineFlow(
     inputSchema: SpeechToTextInputSchema,
     outputSchema: SpeechToTextOutputSchema,
   },
-  async ({audioDataUri}) => {
+  async ({ audioDataUri }) => {
     const audioPart: Part = {
       media: {
         url: audioDataUri,
       },
     };
-    const {text} = await ai.generate({
-      model: 'gemini-1.5-flash-latest',
+
+    const { text } = await ai.generate({
+      model: 'gemini-1.5-flash',
       prompt: [
         audioPart,
         'Transcribe this audio. The audio is a person answering an exam question.',
       ],
     });
-    return {text};
+
+    return { text };
   }
 );
