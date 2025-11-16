@@ -2,7 +2,7 @@
 'use client';
 
 import { editAnswerWithVoiceCommands } from '@/ai/flows/edit-answers-with-voice-commands';
-import { transcribeStudentAnswer } from '@/ai/flows/transcribe-student-answers';
+import { speechToText } from '@/ai/flows/speech-to-text';
 import { VocalPenLogo } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -101,31 +101,31 @@ export default function ExamPage() {
   // Camera permission for verification
   useEffect(() => {
     let stream: MediaStream | null = null;
-    if (step === 'verification' && verificationSubStep === 'face') {
-        const getCameraPermission = async () => {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                setHasCameraPermission(true);
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                }
-            } catch (error) {
-                console.error('Error accessing camera:', error);
-                setHasCameraPermission(false);
-                toast({
-                    variant: 'destructive',
-                    title: 'Camera Access Denied',
-                    description: 'Please enable camera permissions in your browser settings.',
-                });
-            }
-        };
+    const getCameraPermission = async () => {
+      if (step === 'verification' && verificationSubStep === 'face') {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          setHasCameraPermission(true);
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        } catch (error) {
+          console.error('Error accessing camera:', error);
+          setHasCameraPermission(false);
+          toast({
+            variant: 'destructive',
+            title: 'Camera Access Denied',
+            description: 'Please enable camera permissions in your browser settings.',
+          });
+        }
+      }
+    };
 
-        getCameraPermission();
-        
-        return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
+    getCameraPermission();
+    
+    return () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
         }
     }
   }, [step, verificationSubStep, toast]);
@@ -204,8 +204,8 @@ export default function ExamPage() {
   const handleProcessRecording = useCallback(async (audioDataUri: string) => {
       setIsProcessing(true);
       try {
-          const result = await transcribeStudentAnswer({ audioDataUri });
-          setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+          const result = await speechToText({ audioDataUri });
+          setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.text);
       } catch (error) {
           console.error('Transcription error:', error);
           toast({
@@ -468,7 +468,7 @@ export default function ExamPage() {
                             <CheckCircle className="h-24 w-24 text-green-500" />
                         ) : verificationStatus === 'error' ? (
                             <XCircle className="h-24 w-24 text-destructive" />
-                        ) : !hasCameraPermission ? (
+                        ) : !hasCameraPermission && !isProcessing ? (
                            <div className='p-4 text-center'>
                              <Alert variant="destructive">
                                 <AlertTitle>Camera Access Required</AlertTitle>
