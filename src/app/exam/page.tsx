@@ -2,7 +2,6 @@
 'use client';
 
 import { editAnswerWithVoiceCommands } from '@/ai/flows/edit-answers-with-voice-commands';
-import { speechToText } from '@/ai/flows/speech-to-text';
 import { VocalPenLogo } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +37,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 type ExamStep = 'login' | 'verification' | 'selectExam' | 'takingExam' | 'finished';
 type VerificationSubStep = 'face' | 'voice' | 'verified';
 
+// Check for SpeechRecognition API
+const SpeechRecognition =
+  (typeof window !== 'undefined' &&
+    (window.SpeechRecognition || window.webkitSpeechRecognition)) ||
+  null;
+
 export default function ExamPage() {
   const [step, setStep] = useState<ExamStep>('login');
 
@@ -69,6 +74,9 @@ export default function ExamPage() {
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // Web Speech API state
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const { toast } = useToast();
   const { firestore } = useFirebase();
@@ -144,80 +152,103 @@ export default function ExamPage() {
   }, [examStarted, step, timeLeft]);
 
 
-  const startRecording = useCallback(async (onStopCallback?: (audioDataUri: string) => void) => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+  // Web Speech API Setup
+  useEffect(() => {
+    if (!SpeechRecognition) {
+      toast({
+        variant: 'destructive',
+        title: 'Unsupported Browser',
+        description: 'Speech recognition is not supported in your browser.',
+      });
       return;
     }
 
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    let finalTranscript = '';
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      setCurrentAnswer(prev => prev + finalTranscript + ' ');
+      finalTranscript = '';
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error', event.error);
+      toast({
+        variant: 'destructive',
+        title: 'Speech Recognition Error',
+        description: event.error === 'not-allowed' ? 'Microphone access denied.' : 'An error occurred.',
+      });
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      setCurrentAnswer(currentAnswerRef.current + finalTranscript + interimTranscript);
+    };
+    
+    recognitionRef.current = recognition;
+
+  }, [toast]);
+  
+  // Ref to hold currentAnswer to avoid stale closures in recognition.onresult
+  const currentAnswerRef = useRef(currentAnswer);
+  useEffect(() => {
+      currentAnswerRef.current = currentAnswer;
+  }, [currentAnswer]);
+
+
+  const startRecordingForVerification = useCallback(async () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
       audioChunksRef.current = [];
-
       mediaRecorderRef.current.ondataavailable = event => {
         audioChunksRef.current.push(event.data);
       };
-
       mediaRecorderRef.current.onstop = async () => {
         setVoiceRecorded(true);
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const audioDataUri = reader.result as string;
-          if (onStopCallback) {
-            onStopCallback(audioDataUri);
-          }
-          // Clean up stream tracks
-          stream.getTracks().forEach(track => track.stop());
-        };
+        stream.getTracks().forEach(track => track.stop());
       };
-
       mediaRecorderRef.current.start();
-      if(step === 'verification') {
-        setIsVoiceRecording(true);
-        setVoiceRecorded(false);
-      } else {
-        setIsRecording(true);
-      }
+      setIsVoiceRecording(true);
+      setVoiceRecorded(false);
     } catch (error) {
-      console.error('Microphone access error:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Microphone Access Denied',
-        description: 'Please allow microphone access to record.',
-      });
+      toast({ variant: 'destructive', title: 'Microphone Error', description: 'Could not access microphone.' });
     }
-  }, [step, toast]);
-
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      if(step === 'verification') {
-        setIsVoiceRecording(false);
-      } else {
-        setIsRecording(false);
-      }
-    }
-  }, [step]);
-
-  const handleProcessRecording = useCallback(async (audioDataUri: string) => {
-      setIsProcessing(true);
-      try {
-          const result = await speechToText({ audioDataUri });
-          setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.text);
-      } catch (error) {
-          console.error('Transcription error:', error);
-          toast({
-            variant: 'destructive',
-            title: 'Audio Processing Error',
-            description: 'Could not process audio. Please try again.',
-          });
-      } finally {
-          setIsProcessing(false);
-      }
   }, [toast]);
 
+  const stopRecordingForVerification = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsVoiceRecording(false);
+    }
+  }, []);
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+    } else {
+      recognitionRef.current?.start();
+    }
+  };
 
   const handleReadQuestion = useCallback(() => {
     if (!selectedExam) return;
@@ -471,6 +502,7 @@ export default function ExamPage() {
                         ) : !hasCameraPermission && !isProcessing ? (
                            <div className='p-4 text-center'>
                              <Alert variant="destructive">
+                                <Camera className="h-4 w-4" />
                                 <AlertTitle>Camera Access Required</AlertTitle>
                                 <AlertDescription>
                                     Please allow camera access to use this feature.
@@ -499,7 +531,7 @@ export default function ExamPage() {
                         }
                     </p>
                     <Button 
-                        onClick={isVoiceRecording ? stopRecording : () => startRecording()}
+                        onClick={isVoiceRecording ? stopRecordingForVerification : startRecordingForVerification}
                         size="lg"
                         variant={isVoiceRecording ? 'destructive' : 'default'}
                         className="rounded-full w-24 h-24"
@@ -632,7 +664,7 @@ export default function ExamPage() {
                   {(isRecording || isProcessing) && <p className="text-sm text-muted-foreground flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> {isRecording ? 'Recording...' : 'Processing...'}</p>}
                 </div>
                 <Button 
-                    onClick={isRecording ? stopRecording : () => startRecording(handleProcessRecording)}
+                    onClick={toggleRecording}
                     size="lg"
                     className={`rounded-full w-20 h-20 text-white ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
                     disabled={isProcessing}
@@ -727,3 +759,5 @@ export default function ExamPage() {
     </div>
   );
 }
+
+    
