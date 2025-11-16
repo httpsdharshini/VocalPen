@@ -5,10 +5,6 @@ export const ai = genkit({
   plugins: [
     googleAI({
       apiKey: process.env.GEMINI_API_KEY,
-      models: {
-        'gemini-pro': {},
-        'gemini-pro-vision': {},
-      },
     }),
   ],
 });
