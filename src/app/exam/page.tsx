@@ -1,3 +1,4 @@
+
 'use client';
 
 import { editAnswerWithVoiceCommands } from '@/ai/flows/edit-answers-with-voice-commands';
@@ -79,6 +80,7 @@ export default function ExamPage() {
 
   const speak = useCallback((text: string, onEnd?: () => void) => {
     if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Cancel any previous speech
       const utterance = new SpeechSynthesisUtterance(text);
       if (onEnd) {
         utterance.onend = onEnd;
@@ -194,32 +196,31 @@ export default function ExamPage() {
     }
   }, [step]);
 
+  const handleProcessRecording = useCallback(async (audioDataUri: string) => {
+      setIsProcessing(true);
+      try {
+          const result = await transcribeStudentAnswer({ audioDataUri });
+          setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
+      } catch (error) {
+          console.error('Transcription error:', error);
+          toast({
+            variant: 'destructive',
+            title: 'Audio Processing Error',
+            description: 'Could not process audio. Please try again.',
+          });
+      } finally {
+          setIsProcessing(false);
+      }
+  }, [toast]);
+
 
   const handleReadQuestion = useCallback(() => {
     if (!selectedExam) return;
     const currentQuestionText = questions[currentQuestionIndex];
     if (currentQuestionText) {
-      speak(currentQuestionText, () => {
-        // Automatically start recording after question is read
-        startRecording(async (audioDataUri) => {
-            setIsProcessing(true);
-             try {
-                const result = await transcribeStudentAnswer({ audioDataUri });
-                setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
-            } catch (error) {
-                console.error('Transcription error:', error);
-                toast({
-                  variant: 'destructive',
-                  title: 'Audio Processing Error',
-                  description: 'Could not process audio. Please try again.',
-                });
-            } finally {
-                setIsProcessing(false);
-            }
-        });
-      });
+      speak(currentQuestionText);
     }
-  }, [selectedExam, questions, currentQuestionIndex, speak, startRecording, toast]);
+  }, [selectedExam, questions, currentQuestionIndex, speak]);
   
 
   // Effect to read the first question when exam starts
@@ -229,7 +230,7 @@ export default function ExamPage() {
       setAnswers(Array(questions.length).fill(''));
       handleReadQuestion();
     }
-  }, [step, examStarted, currentQuestionIndex, handleReadQuestion, questions.length, answers]);
+  }, [step, examStarted, currentQuestionIndex, handleReadQuestion, questions.length, answers.length]);
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -339,24 +340,7 @@ export default function ExamPage() {
       setCurrentQuestionIndex(nextIndex);
       setCurrentAnswer(answers[nextIndex] || '');
       // Read next question automatically
-      speak(questions[nextIndex], () => {
-        startRecording(async (audioDataUri) => {
-            setIsProcessing(true);
-             try {
-                const result = await transcribeStudentAnswer({ audioDataUri });
-                setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
-            } catch (error) {
-                console.error('Transcription error:', error);
-                toast({
-                  variant: 'destructive',
-                  title: 'Audio Processing Error',
-                  description: 'Could not process audio. Please try again.',
-                });
-            } finally {
-                setIsProcessing(false);
-            }
-        });
-      });
+      speak(questions[nextIndex]);
     } else {
       handleFinishExam(newAnswers);
     }
@@ -626,17 +610,7 @@ export default function ExamPage() {
                   {(isRecording || isProcessing) && <p className="text-sm text-muted-foreground flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> {isRecording ? 'Recording...' : 'Processing...'}</p>}
                 </div>
                 <Button 
-                    onClick={isRecording ? stopRecording : () => startRecording(async (audioDataUri) => {
-                        setIsProcessing(true);
-                         try {
-                            const result = await transcribeStudentAnswer({ audioDataUri });
-                            setCurrentAnswer(prev => (prev ? prev + ' ' : '') + result.transcription);
-                        } catch (error) {
-                            console.error('Transcription error:', error);
-                        } finally {
-                            setIsProcessing(false);
-                        }
-                    })}
+                    onClick={isRecording ? stopRecording : () => startRecording(handleProcessRecording)}
                     size="lg"
                     className={`rounded-full w-20 h-20 text-white ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
                     disabled={isProcessing}
