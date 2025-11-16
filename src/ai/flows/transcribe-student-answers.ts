@@ -36,10 +36,8 @@ const transcribeStudentAnswerPrompt = ai.definePrompt({
   name: 'transcribeStudentAnswerPrompt',
   input: {schema: TranscribeStudentAnswerInputSchema},
   output: {schema: TranscribeStudentAnswerOutputSchema},
-  prompt: `You are an accurate transcription system. Transcribe the student’s audio exactly.
-
-{{media url=audioDataUri}}`,
-  model: 'gemini-pro-vision',
+  prompt: `Transcribe the following audio recording: {{media url=audioDataUri}}`,
+  model: 'gemini-pro',
 });
 
 // =======================
