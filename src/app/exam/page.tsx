@@ -33,6 +33,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import type { Student, Exam } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 type ExamStep = 'login' | 'verification' | 'selectExam' | 'takingExam' | 'finished';
 type VerificationSubStep = 'face' | 'voice' | 'verified';
@@ -52,6 +53,8 @@ export default function ExamPage() {
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [voiceRecorded, setVoiceRecorded] = useState(false);
+
 
   // Exam selection state
   const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
@@ -97,35 +100,35 @@ export default function ExamPage() {
   
   // Camera permission for verification
   useEffect(() => {
-    if (step === 'verification') {
+    let stream: MediaStream | null = null;
+    if (step === 'verification' && verificationSubStep === 'face') {
         const getCameraPermission = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            setHasCameraPermission(true);
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                setHasCameraPermission(true);
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                }
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                setHasCameraPermission(false);
+                toast({
+                    variant: 'destructive',
+                    title: 'Camera Access Denied',
+                    description: 'Please enable camera permissions in your browser settings.',
+                });
             }
-        } catch (error) {
-            console.error('Error accessing camera:', error);
-            setHasCameraPermission(false);
-            toast({
-                variant: 'destructive',
-                title: 'Camera Access Denied',
-                description: 'Please enable camera permissions in your browser settings.',
-            });
-        }
         };
 
         getCameraPermission();
         
         return () => {
-            if (videoRef.current && videoRef.current.srcObject) {
-                const stream = videoRef.current.srcObject as MediaStream;
+            if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
         }
     }
-  }, [step, toast]);
+  }, [step, verificationSubStep, toast]);
 
 
   // Timer effect
@@ -156,6 +159,7 @@ export default function ExamPage() {
       };
 
       mediaRecorderRef.current.onstop = async () => {
+        setVoiceRecorded(true);
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
@@ -172,6 +176,7 @@ export default function ExamPage() {
       mediaRecorderRef.current.start();
       if(step === 'verification') {
         setIsVoiceRecording(true);
+        setVoiceRecorded(false);
       } else {
         setIsRecording(true);
       }
@@ -280,10 +285,13 @@ export default function ExamPage() {
   };
   
   const handleVoiceVerification = () => {
+      if (!voiceRecorded) {
+        toast({ variant: 'destructive', title: 'No Recording', description: 'Please record your name first.' });
+        return;
+      }
       setIsProcessing(true);
       setVerificationStatus('pending');
       // Simulate voice verification after recording
-      stopRecording(); // stop recording before verifying
       setTimeout(() => {
           if (student?.hasVoice) {
               setVerificationStatus('success');
@@ -451,17 +459,24 @@ export default function ExamPage() {
             title = 'Face Verification';
             description = 'Please position your face in the camera frame.';
             content = (
-                <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg border-2 border-dashed overflow-hidden">
+                <div className="relative flex justify-center items-center h-64 w-full bg-muted rounded-lg overflow-hidden">
                     <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
                     <div className="absolute inset-0 flex justify-center items-center bg-black/30">
-                        {isProcessing ? <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                        : verificationStatus === 'success' ? <CheckCircle className="h-24 w-24 text-green-500" />
-                        : verificationStatus === 'error' ? <XCircle className="h-24 w-24 text-destructive" />
-                        : !hasCameraPermission ? (
-                            <div className="text-center text-white p-4">
-                                <Camera className="h-12 w-12 mx-auto mb-2" />
-                                <p>Camera access is required.</p>
-                            </div>
+                        {isProcessing ? (
+                            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                        ) : verificationStatus === 'success' ? (
+                            <CheckCircle className="h-24 w-24 text-green-500" />
+                        ) : verificationStatus === 'error' ? (
+                            <XCircle className="h-24 w-24 text-destructive" />
+                        ) : !hasCameraPermission ? (
+                           <div className='p-4 text-center'>
+                             <Alert variant="destructive">
+                                <AlertTitle>Camera Access Required</AlertTitle>
+                                <AlertDescription>
+                                    Please allow camera access to use this feature.
+                                </AlertDescription>
+                            </Alert>
+                           </div>
                         ) : null}
                     </div>
                 </div>
@@ -475,24 +490,31 @@ export default function ExamPage() {
             break;
         case 'voice':
             title = 'Voice Verification';
-            description = 'Please record yourself saying your full name.';
+            description = 'Please record yourself saying your full name, then click Verify.';
             content = (
                 <div className="flex flex-col items-center justify-center gap-4 h-64">
-                    <p className="text-sm text-muted-foreground">
-                        {isVoiceRecording ? "Recording... Say your name now." : "Ready to record voice sample."}
+                     <p className="text-sm text-muted-foreground">
+                        {isVoiceRecording ? "Recording... Say your name now." : 
+                         voiceRecorded ? "Recording complete. Click Verify to proceed." : "Ready to record voice sample."
+                        }
                     </p>
                     <Button 
-                        onClick={isVoiceRecording ? handleVoiceVerification : () => startRecording()}
+                        onClick={isVoiceRecording ? stopRecording : () => startRecording()}
                         size="lg"
-                        className={`rounded-full w-24 h-24 text-white ${isVoiceRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+                        variant={isVoiceRecording ? 'destructive' : 'default'}
+                        className="rounded-full w-24 h-24"
                         disabled={isProcessing}
                     >
                         {isVoiceRecording ? <Square className="h-10 w-10" /> : <Mic className="h-10 w-10" />}
                     </Button>
-                     {isProcessing && <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Verifying...</p>}
                 </div>
             );
-            footer = null;
+            footer = (
+                 <Button onClick={handleVoiceVerification} disabled={isProcessing || !voiceRecorded}>
+                    {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                    Verify Voice
+                </Button>
+            );
             break;
         case 'verified':
             title = 'Verification Successful';
@@ -705,5 +727,3 @@ export default function ExamPage() {
     </div>
   );
 }
-
-    
